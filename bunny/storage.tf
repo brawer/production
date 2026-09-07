@@ -4,23 +4,23 @@
 # The storage zones to manage. The map key is the zone name, which is also the
 # globally unique S3 bucket name.
 #
-#   region              - primary region code (de, ny, la, sg, syd, ...)
+#   region              - primary region code: BR, DE, JH, LA, NY, SE, SG, SYD, UK
 #   zone_tier           - "Standard" (HDD, single region) or "Edge" (SSD, replicated)
 #   replication_regions - optional geo-replication regions (extra cost)
 locals {
   storage_zones = {
     "brawer-homepage" = {
-      region              = "de"
+      region              = "DE"
       zone_tier           = "Standard"
       replication_regions = []
     }
     "osmdiffs-data" = {
-      region              = "de"
+      region              = "DE"
       zone_tier           = "Standard"
       replication_regions = []
     }
     "osmdiffs-app" = {
-      region              = "de"
+      region              = "DE"
       zone_tier           = "Standard"
       replication_regions = []
     }
