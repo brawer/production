@@ -56,9 +56,47 @@ tofu output s3_endpoints          # per-zone S3 endpoint URLs
 tofu output -json s3_credentials  # per-zone "<access-key>:<secret>" (sensitive)
 ```
 
-For S3-compatible access, the access key ID is the zone name and the secret is
-the zone's read-write `password`. Other outputs: `api_endpoints`,
-`storage_zone_ids`, `passwords`, `passwords_readonly`.
+For S3-compatible access: the **access key ID is the zone name** (which is also
+the bucket name), the **secret is the zone's read-write `password`**, and the
+endpoint is per-region (`https://de-s3.storage.bunnycdn.com`). Bunny supports
+**path-style URLs only**. Other outputs: `api_endpoints` (native Storage API
+base URLs), `storage_zone_ids`, `passwords`, `passwords_readonly`.
+
+### Uploading files
+
+With the [AWS CLI](https://aws.amazon.com/cli/):
+
+```sh
+zone=osmdiffs-data
+secret=$(tofu output -json passwords | jq -r ".\"$zone\"")
+
+AWS_ACCESS_KEY_ID=$zone AWS_SECRET_ACCESS_KEY=$secret \
+  aws --endpoint-url https://de-s3.storage.bunnycdn.com \
+  s3 cp ./conflated.pmtiles "s3://$zone/"
+```
+
+With [rclone](https://rclone.org/) (`~/.config/rclone/rclone.conf`):
+
+```ini
+[bunny-osmdiffs-data]
+type = s3
+provider = Other
+access_key_id = osmdiffs-data
+secret_access_key = <password from `tofu output -json passwords`>
+endpoint = https://de-s3.storage.bunnycdn.com
+```
+
+```sh
+rclone sync ./public bunny-osmdiffs-data:osmdiffs-data
+```
+
+Or the native Storage API (no S3 client needed):
+
+```sh
+zone=brawer-homepage
+curl -T ./index.html -H "AccessKey: $(tofu output -json passwords | jq -r ".\"$zone\"")" \
+  "$(tofu output -json api_endpoints | jq -r ".\"$zone\"")index.html"
+```
 
 ## Notes
 

@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: MIT
 # SPDX-FileCopyrightText: 2026 Sascha Brawer
 
-# S3-compatible storage endpoint URL per zone.
+# S3-compatible endpoint per zone. Bunny's S3 endpoint is per-region, so zones
+# in the same region share a value; the zone name is the bucket / access key ID
+# and the secret is the zone password (see s3_credentials). Path-style only.
 output "s3_endpoints" {
   description = "Map of zone name => S3-compatible endpoint URL."
   value = {
@@ -10,12 +12,13 @@ output "s3_endpoints" {
   }
 }
 
-# HTTP API endpoint URL per zone (bunnycdn Storage API).
+# Base URL per zone for the native Bunny Storage HTTP API. Path-style: the zone
+# name is part of the URL. Authenticate with header "AccessKey: <password>".
 output "api_endpoints" {
-  description = "Map of zone name => HTTP Storage API endpoint URL."
+  description = "Map of zone name => native Bunny Storage HTTP API base URL."
   value = {
     for name, zone in bunnynet_storage_zone.this :
-    name => "https://${zone.hostname}"
+    name => "https://${zone.hostname}/${zone.name}/"
   }
 }
 
