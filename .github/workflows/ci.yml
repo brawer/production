@@ -25,6 +25,11 @@ jobs:
       - name: Format check
         run: tofu fmt -check -recursive -diff
 
+      # The provider block reads secrets/bunny_api_key, which is gitignored.
+      # validate/init never contact the API, so a placeholder is enough.
+      - name: Provide placeholder API key
+        run: echo "ci-placeholder" > secrets/bunny_api_key
+
       - name: Init
         run: tofu init -backend=false
         working-directory: bunny
