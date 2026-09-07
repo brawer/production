@@ -30,8 +30,17 @@ jobs:
       - name: Provide placeholder API key
         run: echo "ci-placeholder" > secrets/bunny_api_key
 
+      # Retry: OpenTofu re-fetches provider signatures from GitHub's release
+      # CDN on every init (even with a pinned lock file), which intermittently
+      # returns 504.
       - name: Init
-        run: tofu init -backend=false
+        run: |
+          for attempt in 1 2 3 4 5; do
+            tofu init -backend=false && exit 0
+            echo "::warning::tofu init attempt $attempt failed; retrying in 20s"
+            sleep 20
+          done
+          exit 1
         working-directory: bunny
 
       - name: Validate
