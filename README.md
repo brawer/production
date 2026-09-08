@@ -25,9 +25,9 @@ Defined in [`bunny/storage.tf`](bunny/storage.tf) as `local.storage_zones`, one
 | Zone | Purpose |
 |---|---|
 | `brawer-homepage` | Hugo static site |
-| `osmdiffs-data` | osmdiffs data files (`conflated.pmtiles`, etc.) |
+| `osmdiffs-data-de` | osmdiffs data files (`conflated.pmtiles`, etc.); `type = "S3"` |
 | `osmdiffs-app` | osmdiffs React frontend build |
-| `osmviews-data` | osmviews data files |
+| `osmviews-data-de` | osmviews data files; `type = "S3"` |
 | `osmviews-app` | osmviews React frontend build |
 
 Every published object goes under a `data/` prefix in its zone, so the CDN
@@ -112,7 +112,7 @@ zones (`-app`, homepage) expose only the native Storage API (`api_endpoints`).
 With the [AWS CLI](https://aws.amazon.com/cli/):
 
 ```sh
-zone=osmdiffs-data
+zone=osmdiffs-data-de
 secret=$(tofu output -json passwords | jq -r ".\"$zone\"")
 
 AWS_ACCESS_KEY_ID=$zone AWS_SECRET_ACCESS_KEY=$secret \
@@ -123,16 +123,16 @@ AWS_ACCESS_KEY_ID=$zone AWS_SECRET_ACCESS_KEY=$secret \
 With [rclone](https://rclone.org/) (`~/.config/rclone/rclone.conf`):
 
 ```ini
-[bunny-osmdiffs-data]
+[bunny-osmdiffs-data-de]
 type = s3
 provider = Other
-access_key_id = osmdiffs-data
+access_key_id = osmdiffs-data-de
 secret_access_key = <password from `tofu output -json passwords`>
 endpoint = https://de-s3.storage.bunnycdn.com
 ```
 
 ```sh
-rclone sync ./public bunny-osmdiffs-data:osmdiffs-data
+rclone sync ./public bunny-osmdiffs-data-de:osmdiffs-data-de
 ```
 
 Or the native Storage API (no S3 client needed):

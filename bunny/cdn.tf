@@ -24,12 +24,12 @@ locals {
     "osmviews.dandelis.ch" = {
       origin_zone = "osmviews-app"
       aliases     = []
-      data_zone   = "osmviews-data"
+      data_zone   = "osmviews-data-de"
     }
     "osmdiffs.dandelis.ch" = {
       origin_zone = "osmdiffs-app"
       aliases     = []
-      data_zone   = "osmdiffs-data"
+      data_zone   = "osmdiffs-data-de"
     }
   }
 

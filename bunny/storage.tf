@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Sascha Brawer
 
 # The storage zones to manage. The map key is the zone name, which is also the
-# globally unique S3 bucket name.
+# globally unique S3 bucket name / access key ID.
 #
 #   region              - primary region code: BR, DE, JH, LA, NY, SE, SG, SYD, UK
 #   zone_tier           - "Standard" (HDD, single region) or "Edge" (SSD, replicated)
@@ -12,6 +12,10 @@
 #                         use an S3 client; the -app / homepage zones are written
 #                         by deploy tooling over the native API, so "Standard".
 #   replication_regions - optional geo-replication regions (extra cost)
+#
+# NB: `type` is RequiresReplace, and Bunny reserves a deleted zone's name for a
+# long time (hours), so the S3-data zones carry a `-de` suffix - the bare
+# `osmviews-data` / `osmdiffs-data` names are burned from the failed type flip.
 locals {
   storage_zones = {
     "brawer-homepage" = {
@@ -20,7 +24,7 @@ locals {
       type                = "Standard"
       replication_regions = []
     }
-    "osmdiffs-data" = {
+    "osmdiffs-data-de" = {
       region              = "DE"
       zone_tier           = "Standard"
       type                = "S3"
@@ -32,7 +36,7 @@ locals {
       type                = "Standard"
       replication_regions = []
     }
-    "osmviews-data" = {
+    "osmviews-data-de" = {
       region              = "DE"
       zone_tier           = "Standard"
       type                = "S3"
