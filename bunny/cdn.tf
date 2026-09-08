@@ -12,7 +12,8 @@
 #
 #   origin_zone - storage zone (key in local.storage_zones) serving the site root
 #   aliases     - extra hostnames on the pull zone, each 301-redirected to the key
-#   data_zone   - optional storage zone that /data/* is routed to via an edge rule
+#   data_zone   - optional storage zone served at /data/* (via its own bare pull
+#                 zone and an OriginUrl edge rule; see below)
 locals {
   sites = {
     "dandelis.ch" = {
@@ -113,20 +114,40 @@ resource "bunnynet_pullzone_edgerule" "canonical_redirect" {
   ]
 }
 
-# Route /data/* to a separate storage zone (the "data" bucket for the project).
-# Bunny's Origin Storage Zone action preserves the request path, so an object
-# requested as /data/x lands at key data/x in the target zone.
+# A bare pull zone (b-cdn.net only, no custom hostname) fronting the project's
+# data storage zone. It exists purely as the target of the /data/* edge rule
+# below: Bunny's edge-rule "Origin Storage Zone" action (OriginStorage) is
+# rejected with "Storage zone not valid" regardless of parameter form, so the
+# supported path is an OriginUrl override to another pull zone's b-cdn.net host.
+resource "bunnynet_pullzone" "data" {
+  for_each = local.data_sites
+
+  name = "${local.pullzone_names[each.key]}-data"
+
+  origin {
+    type        = "StorageZone"
+    storagezone = bunnynet_storage_zone.this[each.value.data_zone].id
+  }
+
+  routing {
+    tier = "Standard"
+  }
+}
+
+# Route /data/* on the site to its data pull zone. Bunny appends the request
+# path to the OriginUrl, so /data/x is fetched as <data-pz>.b-cdn.net/data/x
+# and served from key data/x in the data storage zone.
 resource "bunnynet_pullzone_edgerule" "data_route" {
   for_each = local.data_sites
 
   enabled     = true
   pullzone    = bunnynet_pullzone.site[each.key].id
-  description = "Route /data/* to storage zone ${each.value.data_zone}"
+  description = "Route /data/* to ${bunnynet_pullzone.data[each.key].name}"
 
   actions = [
     {
-      type       = "OriginStorage"
-      parameter1 = tostring(bunnynet_storage_zone.this[each.value.data_zone].id)
+      type       = "OriginUrl"
+      parameter1 = "https://${bunnynet_pullzone.data[each.key].name}.b-cdn.net"
       parameter2 = null
       parameter3 = null
     }

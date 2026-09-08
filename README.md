@@ -49,8 +49,13 @@ domain to production is a `dandelis` → `brawer` substitution of a copied block
 |---|---|---|---|
 | `dandelis.ch` | `dandelis-ch` | `brawer-homepage` | — |
 | `www.dandelis.ch` | `dandelis-ch` | `brawer-homepage` | 301 → `https://dandelis.ch` |
-| `osmviews.dandelis.ch` | `osmviews-dandelis-ch` | `osmviews-app` | `/data/*` → `osmviews-data` |
-| `osmdiffs.dandelis.ch` | `osmdiffs-dandelis-ch` | `osmdiffs-app` | `/data/*` → `osmdiffs-data` |
+| `osmviews.dandelis.ch` | `osmviews-dandelis-ch` | `osmviews-app` | `/data/*` → `osmviews-dandelis-ch-data` |
+| `osmdiffs.dandelis.ch` | `osmdiffs-dandelis-ch` | `osmdiffs-app` | `/data/*` → `osmdiffs-dandelis-ch-data` |
+
+Each `data_zone` gets a bare pull zone (`…-data`, no custom hostname) fronting
+its data storage zone; the `/data/*` edge rule is an `OriginUrl` override to that
+pull zone's `b-cdn.net` host, which Bunny fetches with the path appended
+(`OriginStorage` is rejected by the API).
 
 Cutover for a domain:
 

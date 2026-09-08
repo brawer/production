@@ -68,11 +68,12 @@ output "dns_nameservers" {
   value       = [bunnynet_dns_zone.this.nameserver1, bunnynet_dns_zone.this.nameserver2]
 }
 
-# The *.b-cdn.net hostname of each pull zone, for testing before DNS is moved.
+# The *.b-cdn.net hostname of every pull zone, for testing before DNS is moved
+# and for wiring the /data/* edge rules.
 output "pullzone_cdn_domains" {
-  description = "Map of pull zone name => Bunny *.b-cdn.net hostname."
-  value = {
-    for name, pz in bunnynet_pullzone.site :
-    name => pz.cdn_domain
-  }
+  description = "Map of site => Bunny *.b-cdn.net hostname(s)."
+  value = merge(
+    { for k, pz in bunnynet_pullzone.site : k => "${pz.name}.b-cdn.net" },
+    { for k, pz in bunnynet_pullzone.data : "${k} (data)" => "${pz.name}.b-cdn.net" },
+  )
 }
