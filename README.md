@@ -42,12 +42,15 @@ hosts the domain's DNS on Bunny and links one `PullZone` record per hostname.
 `dandelis.ch` (a parked domain) is the guinea pig for the eventual `brawer.ch`
 migration and mirrors its planned layout:
 
+The pull zone name is the canonical hostname with dots as dashes, so migrating a
+domain to production is a `dandelis` → `brawer` substitution of a copied block.
+
 | Hostname | Pull zone | Origin | Edge rule |
 |---|---|---|---|
-| `dandelis.ch` | `dandelis-homepage` | `brawer-homepage` | — |
-| `www.dandelis.ch` | `dandelis-homepage` | `brawer-homepage` | 301 → `https://dandelis.ch` |
-| `osmviews.dandelis.ch` | `dandelis-osmviews` | `osmviews-app` | `/data/*` → `osmviews-data` |
-| `osmdiffs.dandelis.ch` | `dandelis-osmdiffs` | `osmdiffs-app` | `/data/*` → `osmdiffs-data` |
+| `dandelis.ch` | `dandelis-ch` | `brawer-homepage` | — |
+| `www.dandelis.ch` | `dandelis-ch` | `brawer-homepage` | 301 → `https://dandelis.ch` |
+| `osmviews.dandelis.ch` | `osmviews-dandelis-ch` | `osmviews-app` | `/data/*` → `osmviews-data` |
+| `osmdiffs.dandelis.ch` | `osmdiffs-dandelis-ch` | `osmdiffs-app` | `/data/*` → `osmdiffs-data` |
 
 Cutover for a domain:
 

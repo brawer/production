@@ -1,54 +1,55 @@
 # SPDX-License-Identifier: MIT
 # SPDX-FileCopyrightText: 2026 Sascha Brawer
 
-# CDN layer: one Bunny pull zone per hostname group, each fronting a storage zone.
+# CDN layer: one Bunny pull zone per site, each fronting a storage zone.
 #
 # dandelis.ch is the guinea pig for the brawer.ch migration - it mirrors the
-# layout brawer.ch will eventually use. To add brawer.ch later, add entries here
-# (and a DNS zone + records in dns.tf).
+# layout brawer.ch will eventually use. Each site is keyed by its canonical
+# hostname; the pull zone name is that hostname with dots turned to dashes
+# (dandelis.ch -> dandelis-ch). Moving a domain to production is then a literal
+# "dandelis" -> "brawer" substitution of a copied block - the origin storage
+# zones are already domain-independent.
 #
 #   origin_zone - storage zone (key in local.storage_zones) serving the site root
-#   hostnames   - every hostname attached to the pull zone; the first non-
-#                 canonical one gets a 301 redirect to `canonical`
-#   canonical   - the hostname all others redirect to, and the /data/* match host
+#   aliases     - extra hostnames on the pull zone, each 301-redirected to the key
 #   data_zone   - optional storage zone that /data/* is routed to via an edge rule
 locals {
   sites = {
-    "dandelis-homepage" = {
+    "dandelis.ch" = {
       origin_zone = "brawer-homepage"
-      hostnames   = ["dandelis.ch", "www.dandelis.ch"]
-      canonical   = "dandelis.ch"
+      aliases     = ["www.dandelis.ch"]
       data_zone   = null
     }
-    "dandelis-osmviews" = {
+    "osmviews.dandelis.ch" = {
       origin_zone = "osmviews-app"
-      hostnames   = ["osmviews.dandelis.ch"]
-      canonical   = "osmviews.dandelis.ch"
+      aliases     = []
       data_zone   = "osmviews-data"
     }
-    "dandelis-osmdiffs" = {
+    "osmdiffs.dandelis.ch" = {
       origin_zone = "osmdiffs-app"
-      hostnames   = ["osmdiffs.dandelis.ch"]
-      canonical   = "osmdiffs.dandelis.ch"
+      aliases     = []
       data_zone   = "osmdiffs-data"
     }
   }
 
-  # Flattened (site, hostname) pairs, keyed "<site>|<hostname>". Used for pull
-  # zone hostnames, DNS records, and the canonical-redirect edge rules.
+  # Pull zone name per site: canonical hostname with dots as dashes.
+  pullzone_names = { for host in keys(local.sites) : host => replace(host, ".", "-") }
+
+  # Flattened (site, hostname) pairs, keyed "<canonical>|<hostname>". Used for
+  # pull zone hostnames, DNS records, and the canonical-redirect edge rules.
   site_hostnames = merge([
-    for site, cfg in local.sites : {
-      for host in cfg.hostnames : "${site}|${host}" => {
-        site      = site
-        hostname  = host
-        canonical = cfg.canonical
+    for host, cfg in local.sites : {
+      for h in concat([host], cfg.aliases) : "${host}|${h}" => {
+        site      = host
+        hostname  = h
+        canonical = host
       }
     }
   ]...)
 
   # Sites that need a /data/* -> storage zone edge rule.
   data_sites = {
-    for site, cfg in local.sites : site => cfg if cfg.data_zone != null
+    for host, cfg in local.sites : host => cfg if cfg.data_zone != null
   }
 }
 
@@ -56,7 +57,7 @@ locals {
 resource "bunnynet_pullzone" "site" {
   for_each = local.sites
 
-  name = each.key
+  name = local.pullzone_names[each.key]
 
   origin {
     type        = "StorageZone"
@@ -80,7 +81,7 @@ resource "bunnynet_pullzone_hostname" "site" {
   force_ssl   = true
 }
 
-# 301 every non-canonical hostname to the canonical one, preserving the path.
+# 301 every alias hostname to the canonical one, preserving the path.
 resource "bunnynet_pullzone_edgerule" "canonical_redirect" {
   for_each = {
     for key, sh in local.site_hostnames : key => sh
@@ -136,7 +137,7 @@ resource "bunnynet_pullzone_edgerule" "data_route" {
     {
       type       = "Url"
       match_type = "MatchAny"
-      patterns   = ["*://${each.value.canonical}/data/*"]
+      patterns   = ["*://${each.key}/data/*"]
       parameter1 = null
       parameter2 = null
     }
