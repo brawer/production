@@ -65,6 +65,10 @@ Cutover for a domain:
 3. Wait for Bunny to issue the managed TLS certificates (dashboard → each pull
    zone → Hostnames → SSL). Then verify over HTTPS.
 
+Moving `brawer.ch` itself is deferred until `dandelis.ch` has proven itself and
+real content is in the storage zones — see
+[issue #6](https://github.com/brawer/production/issues/6) for the checklist.
+
 ## Setup
 
 1. Install OpenTofu (`brew install opentofu`).
