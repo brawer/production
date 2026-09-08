@@ -25,8 +25,37 @@ Defined in [`bunny/storage.tf`](bunny/storage.tf) as `local.storage_zones`, one
 | Zone | Purpose |
 |---|---|
 | `brawer-homepage` | Hugo static site |
-| `osmdiffs-data` | Project data files (`conflated.pmtiles`, etc.) |
-| `osmdiffs-app` | React frontend build |
+| `osmdiffs-data` | osmdiffs data files (`conflated.pmtiles`, etc.) |
+| `osmdiffs-app` | osmdiffs React frontend build |
+| `osmviews-data` | osmviews data files |
+| `osmviews-app` | osmviews React frontend build |
+
+Every published object goes under a `data/` prefix in its zone, so the CDN
+`/data/*` edge rule (below) always matches.
+
+### CDN & DNS
+
+[`bunny/cdn.tf`](bunny/cdn.tf) defines `local.sites` — one Bunny pull zone per
+hostname group, each fronting a storage zone. [`bunny/dns.tf`](bunny/dns.tf)
+hosts the domain's DNS on Bunny and links one `PullZone` record per hostname.
+
+`dandelis.ch` (a parked domain) is the guinea pig for the eventual `brawer.ch`
+migration and mirrors its planned layout:
+
+| Hostname | Pull zone | Origin | Edge rule |
+|---|---|---|---|
+| `dandelis.ch` | `dandelis-homepage` | `brawer-homepage` | — |
+| `www.dandelis.ch` | `dandelis-homepage` | `brawer-homepage` | 301 → `https://dandelis.ch` |
+| `osmviews.dandelis.ch` | `dandelis-osmviews` | `osmviews-app` | `/data/*` → `osmviews-data` |
+| `osmdiffs.dandelis.ch` | `dandelis-osmdiffs` | `osmdiffs-app` | `/data/*` → `osmdiffs-data` |
+
+Cutover for a domain:
+
+1. `tofu apply` (creates the pull zones, hostnames, edge rules, DNS zone, records).
+2. At the registrar, delegate the domain to the nameservers in
+   `tofu output dns_nameservers`.
+3. Wait for Bunny to issue the managed TLS certificates (dashboard → each pull
+   zone → Hostnames → SSL). Then verify over HTTPS.
 
 ## Setup
 

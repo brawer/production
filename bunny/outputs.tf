@@ -61,3 +61,18 @@ output "s3_credentials" {
   }
   sensitive = true
 }
+
+# Nameservers to set for dandelis.ch at the registrar to move DNS to Bunny.
+output "dns_nameservers" {
+  description = "dandelis.ch nameservers to configure at the registrar."
+  value       = [bunnynet_dns_zone.dandelis.nameserver1, bunnynet_dns_zone.dandelis.nameserver2]
+}
+
+# The *.b-cdn.net hostname of each pull zone, for testing before DNS is moved.
+output "pullzone_cdn_domains" {
+  description = "Map of pull zone name => Bunny *.b-cdn.net hostname."
+  value = {
+    for name, pz in bunnynet_pullzone.site :
+    name => pz.cdn_domain
+  }
+}
