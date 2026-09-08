@@ -103,6 +103,10 @@ endpoint is per-region (`https://de-s3.storage.bunnycdn.com`). Bunny supports
 **path-style URLs only**. Other outputs: `api_endpoints` (native Storage API
 base URLs), `storage_zone_ids`, `passwords`, `passwords_readonly`.
 
+The S3 API only works on zones created with `type = "S3"` (see
+[`storage.tf`](bunny/storage.tf)) — currently the `-data` zones. `Standard`
+zones (`-app`, homepage) expose only the native Storage API (`api_endpoints`).
+
 ### Uploading files
 
 With the [AWS CLI](https://aws.amazon.com/cli/):
