@@ -24,6 +24,16 @@ locals {
       zone_tier           = "Standard"
       replication_regions = []
     }
+    "osmviews-data" = {
+      region              = "DE"
+      zone_tier           = "Standard"
+      replication_regions = []
+    }
+    "osmviews-app" = {
+      region              = "DE"
+      zone_tier           = "Standard"
+      replication_regions = []
+    }
   }
 }
 

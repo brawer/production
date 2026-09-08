@@ -61,3 +61,18 @@ output "s3_credentials" {
   }
   sensitive = true
 }
+
+# Nameservers to set at the registrar to move DNS to Bunny.
+output "dns_nameservers" {
+  description = "Nameservers to configure at the registrar for the managed domain."
+  value       = [bunnynet_dns_zone.this.nameserver1, bunnynet_dns_zone.this.nameserver2]
+}
+
+# The *.b-cdn.net hostname of each pull zone, for testing before DNS is moved.
+output "pullzone_cdn_domains" {
+  description = "Map of pull zone name => Bunny *.b-cdn.net hostname."
+  value = {
+    for name, pz in bunnynet_pullzone.site :
+    name => pz.cdn_domain
+  }
+}
