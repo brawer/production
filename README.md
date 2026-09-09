@@ -57,6 +57,40 @@ its data storage zone; the `/data/*` edge rule is an `OriginUrl` override to tha
 pull zone's `b-cdn.net` host, which Bunny fetches with the path appended
 (`OriginStorage` is rejected by the API).
 
+### Caching
+
+Storage origins send no `Cache-Control`, so each site pull zone pins an explicit
+**300 s** edge + browser TTL (with stale-while-revalidate). A deploy is then
+visible within minutes without a cache purge — which is deliberate: the deploy
+pipelines are never given the Bunny account API key (it can't be scoped), and it
+is the only credential that can purge.
+
+Content-hashed assets get a longer TTL (`local.immutable_max_age`) via a per-site
+`immutable_assets` edge rule. The URL globs it matches depend on the site's
+`kind`:
+
+| `kind` | Matched as content-hashed |
+|---|---|
+| `hugo` | `*.min.*.css`, `*.min.*.js`, `*_hu*` images, `/fonts/*` |
+| `spa` | `/assets/*` |
+
+`immutable_max_age` starts at **600 s** — deliberately short until a real deploy
+has proven the globs match only hashed files and the build actually fingerprints.
+Once verified on `dandelis.ch`, a follow-up bumps it to a year and adds an
+`immutable` token.
+
+`spa` sites will also need a `404 → /index.html` history-fallback edge rule once
+a frontend actually exists (`TODO` in `cdn.tf`). The Hugo build side is
+[brawer/homepage#81](https://github.com/brawer/homepage/issues/81).
+
+For a manual purge (e.g. after correcting a page), from a machine that has
+`secrets/bunny_api_key`:
+
+```sh
+curl -X POST -H "AccessKey: $(cat secrets/bunny_api_key)" \
+  "https://api.bunny.net/pullzone/$(cd bunny && tofu output -json pullzone_ids | jq '."dandelis.ch"')/purgeCache"
+```
+
 Cutover for a domain:
 
 1. `tofu apply` (creates the pull zones, hostnames, edge rules, DNS zone, records).
