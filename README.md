@@ -76,8 +76,18 @@ Content-hashed assets get a longer TTL (`local.immutable_max_age`) via a per-sit
 
 `immutable_max_age` starts at **600 s** — deliberately short until a real deploy
 has proven the globs match only hashed files and the build actually fingerprints.
-Once verified on `dandelis.ch`, a follow-up bumps it to a year and adds an
-`immutable` token.
+A follow-up then bumps it to 30 days ([issue #13](https://github.com/brawer/production/issues/13)).
+
+**`/data/*`** (the projects' download CDN — see
+[brawer/osmviews#110](https://github.com/brawer/osmviews/issues/110)) has its own
+split, on the site zone so it reaches the client through the `OriginUrl` hop:
+`datapackage.json` is overwritten in place each build, so it gets
+`local.data_manifest_max_age` (**60 s**, `data_manifest` rule); every other
+`/data/` object is immutable by its dated URL (`osmviews-<date>.tiff`,
+`*.pmtiles`, `*.parquet`, `*.cdx.json`, …) and gets `local.immutable_max_age`
+(`data_immutable` rule, a negative match so new file types need no change). The
+inner `…-data` pull zone is also pinned to 60 s so an overwritten manifest can't
+sit stale in that tier.
 
 `spa` sites will also need a `404 → /index.html` history-fallback edge rule once
 a frontend actually exists (`TODO` in `cdn.tf`). The Hugo build side is

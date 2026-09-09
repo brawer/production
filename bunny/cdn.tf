@@ -40,12 +40,22 @@ locals {
     }
   }
 
-  # Edge + browser TTL (seconds) for content-hashed assets. Kept short until a
-  # real deploy has proven the globs below match only hashed files and that the
-  # build actually fingerprints - a wrong glob at a long TTL is only recoverable
-  # with a purge. Bump to 2592000 (30 days, no `immutable` token) once that
-  # holds and the deploy script uploads assets before HTML - see issue #13.
+  # Edge + browser TTL (seconds) for immutable-by-URL assets: content-hashed
+  # build output (immutable_assets, below) and the projects' dated data files
+  # (data_immutable, below - osmviews-<date>.tiff, *.pmtiles, *.cdx.json, ...).
+  # Kept short until a real deploy has proven the hashed-asset globs match only
+  # hashed files and the build actually fingerprints - a wrong glob at a long
+  # TTL is only recoverable with a purge. Bump to 2592000 (30 days, no
+  # `immutable` token) once that holds and the deploy script uploads assets
+  # before HTML - see issue #13. (The dated data files are immutable by
+  # construction and don't share that risk, but one knob is simpler.)
   immutable_max_age = 600
+
+  # TTL for the one mutable object under /data/: datapackage.json, which the
+  # builder overwrites in place each run and clients poll to detect a new build.
+  # Short so a new build shows up fast without an edge purge (Toolforge has no
+  # Bunny account key); clients also re-fetch it on a hash mismatch.
+  data_manifest_max_age = 60
 
   # Content-hashed asset URL globs per site kind. Files matching these carry a
   # hash in the path (Hugo `| fingerprint` output, Hugo image processing, Vite's
@@ -233,6 +243,16 @@ resource "bunnynet_pullzone" "data" {
   routing {
     tier = "Standard"
   }
+
+  # This inner zone is a second cache tier in front of the storage zone (the
+  # site zone reaches it via the data_route OriginUrl rewrite). Pin it short so
+  # an overwritten datapackage.json can't sit stale here after the site zone has
+  # already expired its own copy. Dated files also get this TTL here, which is
+  # harmless: the site-zone data_immutable rule caches them long, so this tier is
+  # asked for them rarely and revalidates cheaply against the storage ETag.
+  cache_expiration_time         = local.data_manifest_max_age
+  cache_expiration_time_browser = local.data_manifest_max_age
+  cache_stale                   = ["updating", "offline"]
 }
 
 # Route /data/* on the site to its data pull zone. Bunny appends the request
@@ -260,6 +280,88 @@ resource "bunnynet_pullzone_edgerule" "data_route" {
       type       = "Url"
       match_type = "MatchAny"
       patterns   = ["*://${each.key}/data/*"]
+      parameter1 = null
+      parameter2 = null
+    }
+  ]
+}
+
+# Cache policy for /data/*, applied on the site zone so it reaches the client
+# through the data_route OriginUrl rewrite (verified: the site zone's cache
+# settings pass through that hop). The model is "datapackage.json is the only
+# mutable object under /data/, everything else is immutable by its dated URL",
+# so the split is expressed as a negative match rather than a file-type list -
+# osmdiffs' *.pmtiles / *.parquet then need no config change.
+resource "bunnynet_pullzone_edgerule" "data_immutable" {
+  for_each = local.data_sites
+
+  enabled     = true
+  pullzone    = bunnynet_pullzone.site[each.key].id
+  description = "Longer cache for dated /data/ files (all but datapackage.json)"
+
+  actions = [
+    {
+      type       = "OverrideCacheTime"
+      parameter1 = tostring(local.immutable_max_age)
+      parameter2 = null
+      parameter3 = null
+    },
+    {
+      type       = "SetResponseHeader"
+      parameter1 = "Cache-Control"
+      parameter2 = "public, max-age=${local.immutable_max_age}"
+      parameter3 = null
+    },
+  ]
+
+  # under /data/ AND not the manifest
+  match_type = "MatchAll"
+  triggers = [
+    {
+      type       = "Url"
+      match_type = "MatchAny"
+      patterns   = ["*://${each.key}/data/*"]
+      parameter1 = null
+      parameter2 = null
+    },
+    {
+      type       = "Url"
+      match_type = "MatchNone"
+      patterns   = ["*://${each.key}/data/datapackage.json"]
+      parameter1 = null
+      parameter2 = null
+    },
+  ]
+}
+
+resource "bunnynet_pullzone_edgerule" "data_manifest" {
+  for_each = local.data_sites
+
+  enabled     = true
+  pullzone    = bunnynet_pullzone.site[each.key].id
+  description = "Short cache for the overwritten-in-place /data/datapackage.json"
+
+  actions = [
+    {
+      type       = "OverrideCacheTime"
+      parameter1 = tostring(local.data_manifest_max_age)
+      parameter2 = null
+      parameter3 = null
+    },
+    {
+      type       = "SetResponseHeader"
+      parameter1 = "Cache-Control"
+      parameter2 = "public, max-age=${local.data_manifest_max_age}"
+      parameter3 = null
+    },
+  ]
+
+  match_type = "MatchAny"
+  triggers = [
+    {
+      type       = "Url"
+      match_type = "MatchAny"
+      patterns   = ["*://${each.key}/data/datapackage.json"]
       parameter1 = null
       parameter2 = null
     }
