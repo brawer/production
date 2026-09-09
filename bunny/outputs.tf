@@ -68,6 +68,15 @@ output "dns_nameservers" {
   value       = [bunnynet_dns_zone.this.nameserver1, bunnynet_dns_zone.this.nameserver2]
 }
 
+# Pull zone IDs, for a manual cache purge from a trusted machine (the deploy
+# pipeline deliberately can't purge - it has no account API key). E.g.
+#   curl -X POST -H "AccessKey: $(cat ../secrets/bunny_api_key)" \
+#     "https://api.bunny.net/pullzone/<id>/purgeCache"
+output "pullzone_ids" {
+  description = "Map of site => Bunny pull zone ID."
+  value       = { for k, pz in bunnynet_pullzone.site : k => pz.id }
+}
+
 # The *.b-cdn.net hostname of every pull zone, for testing before DNS is moved
 # and for wiring the /data/* edge rules.
 output "pullzone_cdn_domains" {

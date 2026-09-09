@@ -14,23 +14,52 @@
 #   aliases     - extra hostnames on the pull zone, each 301-redirected to the key
 #   data_zone   - optional storage zone served at /data/* (via its own bare pull
 #                 zone and an OriginUrl edge rule; see below)
+#   kind        - "hugo" (Hugo static site) or "spa" (client-routed React/Vite
+#                 bundle). Selects the content-hashed URL globs for the immutable
+#                 cache edge rule (local.immutable_globs), and - spa only, still a
+#                 TODO below - a 404 -> /index.html history-fallback rule.
 locals {
   sites = {
     "dandelis.ch" = {
       origin_zone = "brawer-homepage"
       aliases     = ["www.dandelis.ch"]
       data_zone   = null
+      kind        = "hugo"
     }
     "osmviews.dandelis.ch" = {
       origin_zone = "osmviews-app"
       aliases     = []
       data_zone   = "osmviews-data-de"
+      kind        = "spa"
     }
     "osmdiffs.dandelis.ch" = {
       origin_zone = "osmdiffs-app"
       aliases     = []
       data_zone   = "osmdiffs-data-de"
+      kind        = "spa"
     }
+  }
+
+  # Edge + browser TTL (seconds) for content-hashed assets. A hashed URL is in
+  # principle safe to pin forever (31536000 + an `immutable` token), but keep it
+  # short until a real deploy has proven both that the globs below match only
+  # hashed files and that the build actually fingerprints - a wrong glob pinning
+  # HTML for a year is only recoverable with a purge. Bump (and add `immutable`
+  # to the Cache-Control string) in a follow-up once verified on dandelis.ch.
+  immutable_max_age = 600
+
+  # Content-hashed asset URL globs per site kind. Files matching these carry a
+  # hash in the path (Hugo `| fingerprint` output, Hugo image processing, Vite's
+  # /assets/). Everything else rides the short pull zone default
+  # (cache_expiration_time), which is what a deploy needs to bust HTML within
+  # minutes without an edge purge.
+  immutable_globs = {
+    hugo = [
+      "/*.min.*.css", "/*.min.*.js",
+      "/*_hu*.webp", "/*_hu*.avif", "/*_hu*.png", "/*_hu*.jpg", "/*_hu*.jpeg",
+      "/fonts/*",
+    ]
+    spa = ["/assets/*"]
   }
 
   # Pull zone name per site: canonical hostname with dots as dashes.
@@ -68,6 +97,17 @@ resource "bunnynet_pullzone" "site" {
   routing {
     tier = "Standard"
   }
+
+  # Bunny storage origins emit no Cache-Control, so without an explicit override
+  # the edge TTL is undefined. Pin a short default: a deploy is then visible
+  # within minutes with no purge (we keep the account API key out of CI on
+  # purpose). Content-hashed assets get a longer TTL from immutable_assets below.
+  # cache_stale serves the old copy instantly while the edge revalidates in the
+  # background, and while the origin is unreachable.
+  cache_expiration_time         = 300
+  cache_expiration_time_browser = 300
+  cache_stale                   = ["updating", "offline"]
+  strip_cookies                 = true
 }
 
 # Custom hostnames. Omitting certificate/certificate_key selects a managed
@@ -113,6 +153,61 @@ resource "bunnynet_pullzone_edgerule" "canonical_redirect" {
     }
   ]
 }
+
+# Content-hashed assets get a longer cache than the pull zone default. Their URL
+# changes whenever their bytes change (the build puts a hash in the filename), so
+# old and new copies coexist in the storage zone and the deploy pipeline never
+# needs to purge (nor be handed the un-scopeable account API key). TTL is
+# local.immutable_max_age - kept short until proven, see the comment there.
+#
+# OverrideCacheTime sets the edge TTL; SetResponseHeader sets what the browser
+# sees. The match globs are per-site-kind (local.immutable_globs) and have to
+# track what each build emits - see brawer/homepage#81 for the Hugo side.
+resource "bunnynet_pullzone_edgerule" "immutable_assets" {
+  for_each = local.sites
+
+  enabled     = true
+  pullzone    = bunnynet_pullzone.site[each.key].id
+  description = "Longer cache for content-hashed assets"
+
+  actions = [
+    {
+      type       = "OverrideCacheTime"
+      parameter1 = tostring(local.immutable_max_age)
+      parameter2 = null
+      parameter3 = null
+    },
+    {
+      type       = "SetResponseHeader"
+      parameter1 = "Cache-Control"
+      parameter2 = "public, max-age=${local.immutable_max_age}"
+      parameter3 = null
+    },
+  ]
+
+  match_type = "MatchAny"
+  triggers = [
+    {
+      type       = "Url"
+      match_type = "MatchAny"
+      patterns   = [for g in local.immutable_globs[each.value.kind] : "*://${each.key}${g}"]
+      parameter1 = null
+      parameter2 = null
+    }
+  ]
+}
+
+# TODO (when the first SPA frontend is built and deployable): kind == "spa" sites
+# need a history-API fallback so client-routed paths (/osmviews/47.3/8.5) render
+# index.html instead of a storage 404. Planned shape:
+#
+#   trigger  StatusCode == 404  AND  Url MatchNone "*://<host>/data/*"
+#   action   OriginUrl -> "https://<pullzone>.b-cdn.net/index.html"
+#
+# Both the StatusCode trigger and the OriginUrl action exist in the provider.
+# Unverified: whether Bunny appends the request path to that OriginUrl (the
+# /data/* rule below relies on it doing exactly that) - test on dandelis.ch
+# before relying on it; the fallbacks are a custom error page or an edge script.
 
 # A bare pull zone (b-cdn.net only, no custom hostname) fronting the project's
 # data storage zone. It exists purely as the target of the /data/* edge rule
