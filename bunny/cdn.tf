@@ -53,10 +53,15 @@ locals {
   # /assets/). Everything else rides the short pull zone default
   # (cache_expiration_time), which is what a deploy needs to bust HTML within
   # minutes without an edge purge.
+  #
+  # Bunny caps a single edge-rule trigger at 5 patterns, so immutable_assets
+  # chunks these into groups of 5 (rule match_type MatchAny ORs the chunks). The
+  # image list is only what this site's templates emit (picture.html -> webp +
+  # avif); add extensions here if that changes.
   immutable_globs = {
     hugo = [
       "/*.min.*.css", "/*.min.*.js",
-      "/*_hu*.webp", "/*_hu*.avif", "/*_hu*.png", "/*_hu*.jpg", "/*_hu*.jpeg",
+      "/*_hu*.webp", "/*_hu*.avif",
       "/fonts/*",
     ]
     spa = ["/assets/*"]
@@ -185,12 +190,14 @@ resource "bunnynet_pullzone_edgerule" "immutable_assets" {
     },
   ]
 
+  # Bunny allows at most 5 patterns per trigger, so chunk the globs and OR the
+  # chunks (match_type MatchAny).
   match_type = "MatchAny"
   triggers = [
-    {
+    for chunk in chunklist([for g in local.immutable_globs[each.value.kind] : "*://${each.key}${g}"], 5) : {
       type       = "Url"
       match_type = "MatchAny"
-      patterns   = [for g in local.immutable_globs[each.value.kind] : "*://${each.key}${g}"]
+      patterns   = chunk
       parameter1 = null
       parameter2 = null
     }
