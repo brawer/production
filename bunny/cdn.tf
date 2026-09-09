@@ -40,12 +40,11 @@ locals {
     }
   }
 
-  # Edge + browser TTL (seconds) for content-hashed assets. A hashed URL is in
-  # principle safe to pin forever (31536000 + an `immutable` token), but keep it
-  # short until a real deploy has proven both that the globs below match only
-  # hashed files and that the build actually fingerprints - a wrong glob pinning
-  # HTML for a year is only recoverable with a purge. Bump (and add `immutable`
-  # to the Cache-Control string) in a follow-up once verified on dandelis.ch.
+  # Edge + browser TTL (seconds) for content-hashed assets. Kept short until a
+  # real deploy has proven the globs below match only hashed files and that the
+  # build actually fingerprints - a wrong glob at a long TTL is only recoverable
+  # with a purge. Bump to 2592000 (30 days, no `immutable` token) once that
+  # holds and the deploy script uploads assets before HTML - see issue #13.
   immutable_max_age = 600
 
   # Content-hashed asset URL globs per site kind. Files matching these carry a
