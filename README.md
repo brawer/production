@@ -95,20 +95,22 @@ a frontend actually exists (`TODO` in `cdn.tf`). The Hugo build side is
 
 ### Cost guard rails
 
-A hobby account should not be able to produce a surprise four-figure bill. Three
-layers, weakest to strongest:
+A hobby account should not be able to produce a surprise four-figure bill. Two
+layers:
 
 1. **Per-pull-zone monthly egress caps** — `limit_bandwidth` in `cdn.tf`
    (`local.sites[*].bandwidth_cap_gib`, `local.data_bandwidth_cap_gib`). Bunny
    disables a zone once it serves that much in a calendar month, then re-enables
    it at the boundary. Stops one hammered zone from draining the whole balance;
    raise the number here or in the dashboard to lift a stop.
-2. **Spend tripwire** — `.github/workflows/bunny-cost-alert.yml` runs daily,
-   reads `GET /billing`, and fails the run (→ email) at ~€30 month-to-date or a
-   low balance. Needs a `BUNNY_API_KEY` repo secret.
-3. **Prepaid balance, auto-recharge OFF** — the absolute ceiling. Bunny never
+2. **Prepaid balance, auto-recharge OFF** — the absolute ceiling. Bunny never
    charges a card without auto-recharge and suspends zones on a negative
-   balance, so exposure ≈ whatever is topped up. Keep it around €50.
+   balance, so exposure ≈ whatever is topped up. Keep it around €50; Bunny
+   emails a warning as the balance falls, and the dashboard shows
+   month-to-date charges.
+
+No automated spend alert: it would need the un-scopeable account API key in a
+scheduled job, which is not worth it once the caps bound the downside.
 
 Global edge coverage is kept for every zone (small HTML + content-hashed
 bundles); serving only `/data/*` from the cheaper EU + North America regions
