@@ -15,7 +15,7 @@ minimal with Bunny.net S3-compatible storage; more will be added as needed.
 | **Storage** | Bunny.net S3-compatible, DE region (Falkenstein) |
 | **IaC** | [OpenTofu](https://opentofu.org/) |
 | **State** | Local (`bunny/terraform.tfstate`, gitignored) |
-| **Cost** | ~€2–5/month (storage + minimal CDN) |
+| **Cost** | ~€2–5/month (storage + minimal CDN); capped — see [Cost guard rails](#cost-guard-rails) |
 
 ### Storage zones
 
@@ -92,6 +92,28 @@ sit stale in that tier.
 `spa` sites will also need a `404 → /index.html` history-fallback edge rule once
 a frontend actually exists (`TODO` in `cdn.tf`). The Hugo build side is
 [brawer/homepage#81](https://github.com/brawer/homepage/issues/81).
+
+### Cost guard rails
+
+A hobby account should not be able to produce a surprise four-figure bill. Three
+layers, weakest to strongest:
+
+1. **Per-pull-zone monthly egress caps** — `limit_bandwidth` in `cdn.tf`
+   (`local.sites[*].bandwidth_cap_gib`, `local.data_bandwidth_cap_gib`). Bunny
+   disables a zone once it serves that much in a calendar month, then re-enables
+   it at the boundary. Stops one hammered zone from draining the whole balance;
+   raise the number here or in the dashboard to lift a stop.
+2. **Spend tripwire** — `.github/workflows/bunny-cost-alert.yml` runs daily,
+   reads `GET /billing`, and fails the run (→ email) at ~€30 month-to-date or a
+   low balance. Needs a `BUNNY_API_KEY` repo secret.
+3. **Prepaid balance, auto-recharge OFF** — the absolute ceiling. Bunny never
+   charges a card without auto-recharge and suspends zones on a negative
+   balance, so exposure ≈ whatever is topped up. Keep it around €50.
+
+Global edge coverage is kept for every zone (small HTML + content-hashed
+bundles); serving only `/data/*` from the cheaper EU + North America regions
+would need those files on their own hostname — see
+[issue #10](https://github.com/brawer/production/issues/10).
 
 For a manual purge (e.g. after correcting a page), from a machine that has
 `secrets/bunny_api_key`:
