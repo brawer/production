@@ -18,27 +18,47 @@
 #                 bundle). Selects the content-hashed URL globs for the immutable
 #                 cache edge rule (local.immutable_globs), and - spa only, still a
 #                 TODO below - a 404 -> /index.html history-fallback rule.
+#   bandwidth_cap_gib - monthly egress ceiling for the pull zone (GiB). Bunny
+#                 disables the zone once it serves this much in a calendar month
+#                 and re-enables it at the boundary; lift a stop by raising the
+#                 number (here or in the dashboard). A traffic guard, not a
+#                 billing feature - the absolute backstop is the prepaid account
+#                 balance with auto-recharge OFF, which no zone can spend past.
+#                 Values are for the dandelis.ch staging setup (low traffic);
+#                 brawer.ch (issue #6) will want more - roughly hugo 25, spa 300,
+#                 data zone 300 - keeping the sum near EUR 50 even at the
+#                 $0.03/GB Asia rate (EU + North America is $0.01/GB; no
+#                 per-request fees).
 locals {
   sites = {
     "dandelis.ch" = {
-      origin_zone = "brawer-homepage"
-      aliases     = ["www.dandelis.ch"]
-      data_zone   = null
-      kind        = "hugo"
+      origin_zone       = "brawer-homepage"
+      aliases           = ["www.dandelis.ch"]
+      data_zone         = null
+      kind              = "hugo"
+      bandwidth_cap_gib = 10
     }
     "osmviews.dandelis.ch" = {
-      origin_zone = "osmviews-app"
-      aliases     = []
-      data_zone   = "osmviews-data-de"
-      kind        = "spa"
+      origin_zone       = "osmviews-app"
+      aliases           = []
+      data_zone         = "osmviews-data-de"
+      kind              = "spa"
+      bandwidth_cap_gib = 50
     }
     "osmdiffs.dandelis.ch" = {
-      origin_zone = "osmdiffs-app"
-      aliases     = []
-      data_zone   = "osmdiffs-data-de"
-      kind        = "spa"
+      origin_zone       = "osmdiffs-app"
+      aliases           = []
+      data_zone         = "osmdiffs-data-de"
+      kind              = "spa"
+      bandwidth_cap_gib = 50
     }
   }
+
+  # Monthly egress ceiling (GiB) for each bare "<site>-data" pull zone - the
+  # inner cache tier the spa sites reach through the /data/* OriginUrl rewrite.
+  # Staging value; the brawer.ch data zones will want ~300. See bandwidth_cap_gib
+  # above for how the cap behaves.
+  data_bandwidth_cap_gib = 50
 
   # Edge + browser TTL (seconds) for immutable-by-URL assets: content-hashed
   # build output (immutable_assets, below) and the projects' dated data files
@@ -122,6 +142,15 @@ resource "bunnynet_pullzone" "site" {
   cache_expiration_time_browser = 300
   cache_stale                   = ["updating", "offline"]
   strip_cookies                 = true
+
+  # Monthly egress ceiling - see local.sites. Left unmetered (limit_bandwidth
+  # unset) a single hammered zone could run the whole prepaid balance down;
+  # this stops the zone instead. `redirected_countries` is deliberately NOT set
+  # here: the homepage and the content-hashed bundles are small, so global edge
+  # coverage (incl. Asia/LATAM/Africa/Oceania) is worth the higher per-GB rate.
+  # Serving only /data/* from the cheap EU+NA regions would need those files on
+  # their own hostname - folded into the CORS question in issue #10.
+  limit_bandwidth = each.value.bandwidth_cap_gib * 1024 * 1024 * 1024
 }
 
 # Custom hostnames. Omitting certificate/certificate_key selects a managed
@@ -253,6 +282,11 @@ resource "bunnynet_pullzone" "data" {
   cache_expiration_time         = local.data_manifest_max_age
   cache_expiration_time_browser = local.data_manifest_max_age
   cache_stale                   = ["updating", "offline"]
+
+  # Monthly egress ceiling - see local.data_bandwidth_cap_gib. Clients reach this
+  # zone only through the site zone's /data/* OriginUrl hop, so in practice its
+  # counter tracks the site zone's data misses.
+  limit_bandwidth = local.data_bandwidth_cap_gib * 1024 * 1024 * 1024
 }
 
 # Route /data/* on the site to its data pull zone. Bunny appends the request

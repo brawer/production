@@ -15,7 +15,7 @@ minimal with Bunny.net S3-compatible storage; more will be added as needed.
 | **Storage** | Bunny.net S3-compatible, DE region (Falkenstein) |
 | **IaC** | [OpenTofu](https://opentofu.org/) |
 | **State** | Local (`bunny/terraform.tfstate`, gitignored) |
-| **Cost** | ~€2–5/month (storage + minimal CDN) |
+| **Cost** | ~€2–5/month (storage + minimal CDN); capped — see [Cost guard rails](#cost-guard-rails) |
 
 ### Storage zones
 
@@ -92,6 +92,30 @@ sit stale in that tier.
 `spa` sites will also need a `404 → /index.html` history-fallback edge rule once
 a frontend actually exists (`TODO` in `cdn.tf`). The Hugo build side is
 [brawer/homepage#81](https://github.com/brawer/homepage/issues/81).
+
+### Cost guard rails
+
+A hobby account should not be able to produce a surprise four-figure bill. Two
+layers:
+
+1. **Per-pull-zone monthly egress caps** — `limit_bandwidth` in `cdn.tf`
+   (`local.sites[*].bandwidth_cap_gib`, `local.data_bandwidth_cap_gib`). Bunny
+   disables a zone once it serves that much in a calendar month, then re-enables
+   it at the boundary. Stops one hammered zone from draining the whole balance;
+   raise the number here or in the dashboard to lift a stop.
+2. **Prepaid balance, auto-recharge OFF** — the absolute ceiling. Bunny never
+   charges a card without auto-recharge and suspends zones on a negative
+   balance, so exposure ≈ whatever is topped up. Keep it around €50; Bunny
+   emails a warning as the balance falls, and the dashboard shows
+   month-to-date charges.
+
+No automated spend alert: it would need the un-scopeable account API key in a
+scheduled job, which is not worth it once the caps bound the downside.
+
+Global edge coverage is kept for every zone (small HTML + content-hashed
+bundles); serving only `/data/*` from the cheaper EU + North America regions
+would need those files on their own hostname — see
+[issue #10](https://github.com/brawer/production/issues/10).
 
 For a manual purge (e.g. after correcting a page), from a machine that has
 `secrets/bunny_api_key`:
