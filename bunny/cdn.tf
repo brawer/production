@@ -8,8 +8,10 @@
 # domain-independent). Each site is keyed by its canonical hostname; the pull
 # zone name is that hostname with dots turned to dashes (dandelis.ch ->
 # dandelis-ch), so each brawer.ch entry is a literal "dandelis" -> "brawer"
-# substitution of the matching dandelis.ch block, plus cutover = false (see
-# below) until the registrar nameserver change.
+# substitution of the matching dandelis.ch block, plus a per-domain cutover
+# flag (see below) - both domains are now delegated to Bunny (registrar
+# transferred to Infomaniak, NS -> kiki/coco.bunny.net, verified 2026-09-14),
+# so cutover is true everywhere.
 #
 #   domain      - the DNS domain (key in dns.tf's local.dns_domains) this site's
 #                 hostnames belong to. Always the site's own apex or an ancestor
@@ -75,13 +77,12 @@ locals {
     }
 
     # brawer.ch mirrors dandelis.ch (issue #6): same origin storage zones (they
-    # are domain-independent), staged here ahead of the registrar nameserver
-    # change. cutover=false keeps the pull zone hostnames TLS-disabled and the
-    # DNS zone dormant - no effect on the live brawer.ch (still on Hostpoint)
-    # until the registrar is switched and cutover flips to true.
+    # are domain-independent). Registrar transferred to Infomaniak and NS
+    # delegated to Bunny (verified 2026-09-14 - see the file header), so
+    # cutover is now true: Bunny attempts managed TLS certificate issuance.
     "brawer.ch" = {
       domain                 = "brawer.ch"
-      cutover                = false
+      cutover                = true
       origin_zone            = "brawer-homepage"
       aliases                = ["www.brawer.ch"]
       data_zone              = null
@@ -91,7 +92,7 @@ locals {
     }
     "osmviews.brawer.ch" = {
       domain                 = "brawer.ch"
-      cutover                = false
+      cutover                = true
       origin_zone            = "osmviews-app"
       aliases                = []
       data_zone              = "osmviews-data-de"
@@ -101,7 +102,7 @@ locals {
     }
     "osmdiffs.brawer.ch" = {
       domain                 = "brawer.ch"
-      cutover                = false
+      cutover                = true
       origin_zone            = "osmdiffs-app"
       aliases                = []
       data_zone              = "osmdiffs-data-de"
