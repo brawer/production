@@ -39,32 +39,25 @@ Every published object goes under a `data/` prefix in its zone, so the CDN
 hostname group, each fronting a storage zone. [`bunny/dns.tf`](bunny/dns.tf)
 hosts the domain's DNS on Bunny and links one `PullZone` record per hostname.
 
-`dandelis.ch` (a parked domain) was the guinea pig for the `brawer.ch`
-migration; both now sit side by side in `local.sites`, pointing at the same
-origin storage zones (they're domain-independent):
+`dandelis.ch` was the guinea pig for the `brawer.ch` migration and has since
+been decommissioned (2026-09-14) — parked, no Bunny DNS, no website, no mail —
+now that `brawer.ch` is the real live domain:
 
-The pull zone name is the canonical hostname with dots as dashes, so each
-`brawer.ch` entry is a `dandelis` → `brawer` substitution of the matching
-`dandelis.ch` block, plus a per-site `cutover` flag (see `cdn.tf`).
+The pull zone name is the canonical hostname with dots as dashes
+(`brawer.ch` → `brawer-ch`).
 
 | Hostname | Pull zone | Origin | Edge rule | Cutover |
 |---|---|---|---|---|
-| `dandelis.ch` | `dandelis-ch` | `brawer-homepage` | — | live |
-| `www.dandelis.ch` | `dandelis-ch` | `brawer-homepage` | 301 → `https://dandelis.ch` | live |
-| `osmviews.dandelis.ch` | `osmviews-dandelis-ch` | `osmviews-app` | `/data/*` → `osmviews-dandelis-ch-data` | live |
-| `osmdiffs.dandelis.ch` | `osmdiffs-dandelis-ch` | `osmdiffs-app` | `/data/*` → `osmdiffs-dandelis-ch-data` | live |
-| `brawer.ch` | `brawer-ch` | `brawer-homepage` | — | staged |
-| `www.brawer.ch` | `brawer-ch` | `brawer-homepage` | 301 → `https://brawer.ch` | staged |
-| `osmviews.brawer.ch` | `osmviews-brawer-ch` | `osmviews-app` | `/data/*` → `osmviews-brawer-ch-data` | staged |
-| `osmdiffs.brawer.ch` | `osmdiffs-brawer-ch` | `osmdiffs-app` | `/data/*` → `osmdiffs-brawer-ch-data` | staged |
+| `brawer.ch` | `brawer-ch` | `brawer-homepage` | — | live |
+| `www.brawer.ch` | `brawer-ch` | `brawer-homepage` | 301 → `https://brawer.ch` | live |
+| `osmviews.brawer.ch` | `osmviews-brawer-ch` | `osmviews-app` | `/data/*` → `osmviews-brawer-ch-data` | live |
+| `osmdiffs.brawer.ch` | `osmdiffs-brawer-ch` | `osmdiffs-app` | `/data/*` → `osmdiffs-brawer-ch-data` | live |
 
-"Staged" means the Bunny DNS zone, pull zones, and DNS records all exist, but
-the registrar still points `brawer.ch` at its old host (Hostpoint) and the
-pull zone hostnames stay `tls_enabled = false` (managed-cert issuance would
-fail while the hostname still resolves elsewhere). Flipping `cutover = true`
-in `cdn.tf` after the registrar nameserver change issues the certs. `dns.tf`
-also stages Infomaniak mail records (MX/SPF/autoconfig/autodiscover/DKIM) for
-`brawer.ch`, identical in shape to `dandelis.ch`'s. See
+`brawer.ch`'s registrar transferred to Infomaniak and its nameservers delegate
+to Bunny (`kiki`/`coco.bunny.net`, verified 2026-09-14), so `cutover` is `true`
+— Bunny issues managed TLS certificates once a pull zone hostname's DNS
+actually resolves to it. `dns.tf` also hosts Infomaniak mail records
+(MX/SPF/autoconfig/autodiscover/DKIM) for it. See
 [issue #6](https://github.com/brawer/production/issues/6).
 
 Each `data_zone` gets a bare pull zone (`…-data`, no custom hostname) fronting
@@ -137,7 +130,7 @@ For a manual purge (e.g. after correcting a page), from a machine that has
 
 ```sh
 curl -X POST -H "AccessKey: $(cat secrets/bunny_api_key)" \
-  "https://api.bunny.net/pullzone/$(cd bunny && tofu output -json pullzone_ids | jq '."dandelis.ch"')/purgeCache"
+  "https://api.bunny.net/pullzone/$(cd bunny && tofu output -json pullzone_ids | jq '."brawer.ch"')/purgeCache"
 ```
 
 Cutover for a domain:
@@ -146,15 +139,18 @@ Cutover for a domain:
    (creates the pull zones, hostnames, edge rules, DNS zone, records — no
    effect on the live domain, which is still delegated elsewhere).
 2. At the registrar, delegate the domain to the nameservers in
-   `tofu output dns_nameservers` (a map keyed by domain).
+   `tofu output dns_nameservers` (a map keyed by domain). Verify with
+   `dig NS <domain>` before the next step — don't trust it secondhand.
 3. Flip `cutover = true` for the domain and `tofu apply` again; Bunny then
-   attempts managed TLS certificate issuance (dashboard → each pull zone →
-   Hostnames → SSL). Then verify over HTTPS.
+   attempts managed TLS certificate issuance. If a hostname fails with
+   `loadFreeCertificate failed` / `"not pointing to our servers"`, that's a
+   known race — just re-run `tofu apply`, no config change needed. Then
+   verify over HTTPS.
 
-`brawer.ch` is staged this way (step 1 done — see the table above); step 2
-(the registrar nameserver change) is deferred until `dandelis.ch` has proven
-itself in daily use and real content is in all three storage zones — see
-[issue #6](https://github.com/brawer/production/issues/6) for the checklist.
+`brawer.ch` completed this and is live (registrar transferred to Infomaniak,
+NS delegated to Bunny, 2026-09-14) — see
+[issue #6](https://github.com/brawer/production/issues/6). `dandelis.ch`, the
+domain that proved out this checklist, has since been decommissioned.
 
 ## Setup
 
