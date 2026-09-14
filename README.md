@@ -233,6 +233,82 @@ curl -T ./index.html -H "AccessKey: $(tofu output -json passwords | jq -r ".\"$z
 - `.terraform.lock.hcl` is committed to pin provider versions; run
   `tofu init -upgrade` to bump them deliberately.
 
+## Infomaniak
+
+Two more OpenTofu root modules — `infomaniak/` and `infomaniak-k8s/`, each
+with its own local state. They're separate modules (not just separate files)
+because configuring the `kubernetes` provider from a cluster's own kubeconfig
+output in the same apply that creates the cluster is unreliable (provider
+config can't depend on a value that's unknown until that apply's resources
+are actually created); `infomaniak-k8s/` instead reads the kubeconfig back
+from `infomaniak/`'s already-applied state via `terraform_remote_state`.
+
+| | |
+|---|---|
+| **`infomaniak/`** | Managed Kubernetes (KaaS) cluster, via the [Infomaniak provider](https://registry.terraform.io/providers/Infomaniak/infomaniak/latest) |
+| **`infomaniak-k8s/`** | The CronJob workload on that cluster, via `hashicorp/kubernetes` |
+| **State** | Local (`infomaniak/terraform.tfstate`, `infomaniak-k8s/terraform.tfstate`, both gitignored) |
+| **Cost** | Control plane free (`pack_name = "shared"`); worker node(s) billed only while running (`min_instances = 0`, scale-to-zero) |
+
+Domain registrar transfer (brawer.ch, dandelis.ch: itfactory.ag → Infomaniak)
+is a manual, one-time step outside OpenTofu — Infomaniak's provider only
+manages DNS zones/records (`infomaniak_zone`/`infomaniak_record`) and cloud
+resources (KaaS, DBaaS), not registrar transfers. Nothing here depends on it:
+DNS hosting stays on Bunny (`bunny/dns.tf`) regardless of which registrar
+holds the domain.
+
+### KaaS cluster (`infomaniak/kaas.tf`)
+
+One cluster (`infomaniak_kaas.cronjobs`) and one autoscaling node pool
+(`infomaniak_kaas_instance_pool.cronjobs`), scaled to zero when idle — the
+cronjob it exists for (below) runs ~4h once a week, so a fixed always-on node
+would sit idle >99% of the time.
+
+The cluster lives inside an existing Infomaniak Public Cloud project; the
+provider has no resource to create that project itself (Manager → Public
+Cloud → create project is a one-time manual step first). Several values in
+`kaas.tf` are marked `TODO` and must be filled in from your own project
+before the first apply — `public_cloud_id`, `public_cloud_project_id`,
+`region`, `flavor_name`, `availability_zone` — see the comments there for the
+exact discovery commands.
+
+**Unverified, check on the first apply:** whether Infomaniak's autoscaler
+actually supports scaling from zero, and whether the cluster's kubeconfig has
+the client-certificate shape `infomaniak-k8s/main.tf` assumes (swap in a
+bearer `token` there if not).
+
+### CronJob workload (`infomaniak-k8s/cronjob.tf`)
+
+A weekly `kubernetes_cron_job_v1`: 8 vCPUs / 8 GiB RAM, a 200 GiB ephemeral
+scratch volume (`volume.ephemeral`, so it's created fresh per run and never
+lingers between weeks), and S3 credentials injected via a
+`kubernetes_secret_v1` (`env_from`). TODO before the first apply: replace the
+`busybox` placeholder image/command with the real job, create
+`secrets/infomaniak_cronjob_s3_credentials.json` (gitignored — see the
+comment in `cronjob.tf` for its shape) with the real credentials, and verify
+`storage_class_name` against `kubectl get storageclass` once the cluster
+exists.
+
+### Setup
+
+1. Create an API token at
+   <https://www.infomaniak.com/en/support/faq/2582/generate-and-manage-infomaniak-api-tokens>
+   and save it, with no trailing newline, to `secrets/infomaniak_api_token`.
+2. Fill in the `TODO`s in `infomaniak/kaas.tf` (see above).
+3. Create `secrets/infomaniak_cronjob_s3_credentials.json` (see
+   `infomaniak-k8s/cronjob.tf`) and replace `cronjob.tf`'s placeholder
+   image/command with the real job.
+
+### Usage
+
+Apply the cluster before the workload — `infomaniak-k8s/` reads the
+kubeconfig back from `infomaniak/`'s state, so it needs that state to exist:
+
+```sh
+cd infomaniak && tofu init && tofu apply
+cd ../infomaniak-k8s && tofu init && tofu apply
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
