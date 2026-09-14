@@ -39,30 +39,25 @@ Every published object goes under a `data/` prefix in its zone, so the CDN
 hostname group, each fronting a storage zone. [`bunny/dns.tf`](bunny/dns.tf)
 hosts the domain's DNS on Bunny and links one `PullZone` record per hostname.
 
-`dandelis.ch` (a parked domain) was the guinea pig for the `brawer.ch`
-migration; both now sit side by side in `local.sites`, pointing at the same
-origin storage zones (they're domain-independent):
+`dandelis.ch` was the guinea pig for the `brawer.ch` migration and has since
+been decommissioned (2026-09-14) — parked, no Bunny DNS, no website, no mail —
+now that `brawer.ch` is the real live domain:
 
-The pull zone name is the canonical hostname with dots as dashes, so each
-`brawer.ch` entry is a `dandelis` → `brawer` substitution of the matching
-`dandelis.ch` block, plus a per-site `cutover` flag (see `cdn.tf`).
+The pull zone name is the canonical hostname with dots as dashes
+(`brawer.ch` → `brawer-ch`).
 
 | Hostname | Pull zone | Origin | Edge rule | Cutover |
 |---|---|---|---|---|
-| `dandelis.ch` | `dandelis-ch` | `brawer-homepage` | — | live |
-| `www.dandelis.ch` | `dandelis-ch` | `brawer-homepage` | 301 → `https://dandelis.ch` | live |
-| `osmviews.dandelis.ch` | `osmviews-dandelis-ch` | `osmviews-app` | `/data/*` → `osmviews-dandelis-ch-data` | live |
-| `osmdiffs.dandelis.ch` | `osmdiffs-dandelis-ch` | `osmdiffs-app` | `/data/*` → `osmdiffs-dandelis-ch-data` | live |
 | `brawer.ch` | `brawer-ch` | `brawer-homepage` | — | live |
 | `www.brawer.ch` | `brawer-ch` | `brawer-homepage` | 301 → `https://brawer.ch` | live |
 | `osmviews.brawer.ch` | `osmviews-brawer-ch` | `osmviews-app` | `/data/*` → `osmviews-brawer-ch-data` | live |
 | `osmdiffs.brawer.ch` | `osmdiffs-brawer-ch` | `osmdiffs-app` | `/data/*` → `osmdiffs-brawer-ch-data` | live |
 
-Both domains' registrar transferred to Infomaniak and their nameservers now
-delegate to Bunny (`kiki`/`coco.bunny.net`, verified 2026-09-14), so `cutover`
-is `true` everywhere — Bunny issues managed TLS certificates once a pull zone
-hostname's DNS actually resolves to it. `dns.tf` also hosts Infomaniak mail
-records (MX/SPF/autoconfig/autodiscover/DKIM) for both domains. See
+`brawer.ch`'s registrar transferred to Infomaniak and its nameservers delegate
+to Bunny (`kiki`/`coco.bunny.net`, verified 2026-09-14), so `cutover` is `true`
+— Bunny issues managed TLS certificates once a pull zone hostname's DNS
+actually resolves to it. `dns.tf` also hosts Infomaniak mail records
+(MX/SPF/autoconfig/autodiscover/DKIM) for it. See
 [issue #6](https://github.com/brawer/production/issues/6).
 
 Each `data_zone` gets a bare pull zone (`…-data`, no custom hostname) fronting
@@ -135,7 +130,7 @@ For a manual purge (e.g. after correcting a page), from a machine that has
 
 ```sh
 curl -X POST -H "AccessKey: $(cat secrets/bunny_api_key)" \
-  "https://api.bunny.net/pullzone/$(cd bunny && tofu output -json pullzone_ids | jq '."dandelis.ch"')/purgeCache"
+  "https://api.bunny.net/pullzone/$(cd bunny && tofu output -json pullzone_ids | jq '."brawer.ch"')/purgeCache"
 ```
 
 Cutover for a domain:
@@ -152,9 +147,10 @@ Cutover for a domain:
    known race — just re-run `tofu apply`, no config change needed. Then
    verify over HTTPS.
 
-Both `dandelis.ch` and `brawer.ch` completed this and are live (registrar
-transferred to Infomaniak, NS delegated to Bunny, 2026-09-14) — see
-[issue #6](https://github.com/brawer/production/issues/6).
+`brawer.ch` completed this and is live (registrar transferred to Infomaniak,
+NS delegated to Bunny, 2026-09-14) — see
+[issue #6](https://github.com/brawer/production/issues/6). `dandelis.ch`, the
+domain that proved out this checklist, has since been decommissioned.
 
 ## Setup
 
