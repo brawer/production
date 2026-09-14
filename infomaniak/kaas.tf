@@ -10,17 +10,8 @@ locals {
   public_cloud_id         = 23824
   public_cloud_project_id = 47516
 
-  # UNVERIFIED: "Data Center 4" is the label shown in the Manager UI: the
-  # provider's own examples use short API slugs instead (e.g. "dc-3"), so
-  # this may need to become one of those instead. Region/version are only
-  # checked against the real API at apply time (`tofu validate` can't catch
-  # a wrong value here) - if `tofu apply` rejects it, find the actual slug
-  # via `openstack region list` (project's clouds.yaml) or the cluster
-  # creation screen in Manager -> Public Cloud -> Kubernetes.
-  kaas_region = "Data Center 4"
-
-  # UNVERIFIED: whether Infomaniak's KaaS offering has 1.36 available yet -
-  # same apply-time caveat as region.
+  # "Data Center 4" (Manager UI label) -> "dc-4" API slug.
+  kaas_region             = "dc-4"
   kaas_kubernetes_version = "1.36"
 }
 
