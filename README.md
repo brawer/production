@@ -235,42 +235,45 @@ curl -T ./index.html -H "AccessKey: $(tofu output -json passwords | jq -r ".\"$z
 
 ## Infomaniak
 
-Two more OpenTofu root modules — `infomaniak/` and `infomaniak-k8s/`, each
-with its own local state. They're separate modules (not just separate files)
-because configuring the `kubernetes` provider from a cluster's own kubeconfig
-output in the same apply that creates the cluster is unreliable (provider
-config can't depend on a value that's unknown until that apply's resources
-are actually created); `infomaniak-k8s/` instead reads the kubeconfig back
-from `infomaniak/`'s already-applied state via `terraform_remote_state`.
+Three more OpenTofu root modules — `infomaniak/`, `infomaniak-k8s/`, and
+`infomaniak-storage/` — each with its own local state and its own
+credentials (three different Infomaniak auth mechanisms; see each module's
+Setup below). `infomaniak/` and `infomaniak-k8s/` are separate modules (not
+just separate files) because configuring the `kubernetes` provider from a
+cluster's own kubeconfig output in the same apply that creates the cluster
+is unreliable (provider config can't depend on a value that's unknown until
+that apply's resources are actually created); `infomaniak-k8s/` instead
+reads the kubeconfig back from `infomaniak/`'s already-applied state via
+`terraform_remote_state`.
 
 | | |
 |---|---|
 | **`infomaniak/`** | Managed Kubernetes (KaaS) cluster, via the [Infomaniak provider](https://registry.terraform.io/providers/Infomaniak/infomaniak/latest) |
 | **`infomaniak-k8s/`** | The CronJob workload on that cluster, via `hashicorp/kubernetes` |
-| **State** | Local (`infomaniak/terraform.tfstate`, `infomaniak-k8s/terraform.tfstate`, both gitignored) |
-| **Cost** | Control plane free (`pack_name = "shared"`); worker node(s) billed only while running (`min_instances = 0`, scale-to-zero) |
+| **`infomaniak-storage/`** | S3-compatible Object Storage buckets (Infomaniak Public Cloud), via `hashicorp/aws` pointed at a custom endpoint |
+| **State** | Local (`<module>/terraform.tfstate`, all gitignored) |
+| **Cost** | KaaS control plane free (`pack_name = "shared"`); worker node(s) billed only while running (`min_instances = 0`, scale-to-zero, ~$0.04/h when up); Object Storage billed per GB stored/transferred |
 
-Domain registrar transfer (brawer.ch, dandelis.ch: itfactory.ag → Infomaniak)
-is a manual, one-time step outside OpenTofu — Infomaniak's provider only
-manages DNS zones/records (`infomaniak_zone`/`infomaniak_record`) and cloud
-resources (KaaS, DBaaS), not registrar transfers. Nothing here depends on it:
-DNS hosting stays on Bunny (`bunny/dns.tf`) regardless of which registrar
-holds the domain.
+Domain registrar transfer (brawer.ch: itfactory.ag → Infomaniak, completed
+2026-09-14) was a manual, one-time step outside OpenTofu — Infomaniak's
+provider only manages DNS zones/records (`infomaniak_zone`/`infomaniak_record`)
+and cloud resources (KaaS, DBaaS), not registrar transfers. Nothing here
+depended on it: DNS hosting stays on Bunny (`bunny/dns.tf`) regardless of
+which registrar holds the domain.
 
 ### KaaS cluster (`infomaniak/kaas.tf`)
 
 One cluster (`infomaniak_kaas.cronjobs`) and one autoscaling node pool
 (`infomaniak_kaas_instance_pool.cronjobs`), scaled to zero when idle — the
 cronjob it exists for (below) runs ~4h once a week, so a fixed always-on node
-would sit idle >99% of the time.
-
-The cluster lives inside an existing Infomaniak Public Cloud project; the
-provider has no resource to create that project itself (Manager → Public
-Cloud → create project is a one-time manual step first). Several values in
-`kaas.tf` are marked `TODO` and must be filled in from your own project
-before the first apply — `public_cloud_id`, `public_cloud_project_id`,
-`region`, `flavor_name`, `availability_zone` — see the comments there for the
-exact discovery commands.
+would sit idle >99% of the time. Lives inside an existing Infomaniak Public
+Cloud project (`public_cloud_id`/`public_cloud_project_id`, no Terraform
+resource creates the project itself — a one-time manual step, Manager →
+Public Cloud → create project). `region`, `kubernetes_version`,
+`flavor_name`, and `availability_zone` are all verified against the real API
+(`GET /1/public_clouds/kaas/{regions,versions,availability_zones}` and the
+project's `.../kaas/flavors`) rather than guessed — see the comments in
+`kaas.tf` for the exact calls, useful again if any of these need to change.
 
 **Unverified, check on the first apply:** whether Infomaniak's autoscaler
 actually supports scaling from zero, and whether the cluster's kubeconfig has
@@ -289,12 +292,37 @@ comment in `cronjob.tf` for its shape) with the real credentials, and verify
 `storage_class_name` against `kubectl get storageclass` once the cluster
 exists.
 
+### Object Storage (`infomaniak-storage/buckets.tf`)
+
+Internal-only S3 buckets (logs, inter-run caches for scheduled jobs — not for
+public downloads, that's Bunny's `/data/*` CDN). Infomaniak Public Cloud
+Object Storage is Swift with an S3-compatible layer on top and has no
+dedicated Infomaniak Terraform resource, so this module talks to it like any
+other S3-compatible service: `hashicorp/aws` pointed at
+`https://s3.pub1.infomaniak.cloud` with path-style addressing, `region` a
+pure compatibility placeholder (data stays in Infomaniak's Swiss DCs
+regardless). Buckets are private by default (nothing here sets a
+public-read policy); `local.buckets` currently has one entry,
+`osmdiffs-internal`, for the weekly cronjob above.
+
+Credentials are **OpenStack EC2-style access/secret keys, not the Infomaniak
+account API token** — Object Storage isn't reachable through that account
+API at all, only through the OpenStack API for the Public Cloud project. See
+Setup below.
+
 ### Setup
 
-1. Create an API token at
+1. Create an Infomaniak account API token (used by `infomaniak/`'s
+   `infomaniak_kaas` resources) at
    <https://www.infomaniak.com/en/support/faq/2582/generate-and-manage-infomaniak-api-tokens>
-   and save it, with no trailing newline, to `secrets/infomaniak_api_token`.
-2. Fill in the `TODO`s in `infomaniak/kaas.tf` (see above).
+   — Public Cloud read+write scope covers everything here — and save it,
+   with no trailing newline, to `secrets/infomaniak_api_token`.
+2. For `infomaniak-storage/`: download the project's `clouds.yaml` (Manager
+   → Public Cloud → your project → OpenStack API) to
+   `~/.config/openstack/clouds.yaml`, then `openstack ec2 credentials
+   create` (`pip install python-openstackclient`) and save the two printed
+   values to `secrets/infomaniak_s3_access_key` /
+   `secrets/infomaniak_s3_secret_key`.
 3. Create `secrets/infomaniak_cronjob_s3_credentials.json` (see
    `infomaniak-k8s/cronjob.tf`) and replace `cronjob.tf`'s placeholder
    image/command with the real job.
@@ -302,11 +330,14 @@ exists.
 ### Usage
 
 Apply the cluster before the workload — `infomaniak-k8s/` reads the
-kubeconfig back from `infomaniak/`'s state, so it needs that state to exist:
+kubeconfig back from `infomaniak/`'s state, so it needs that state to exist.
+`infomaniak-storage/` is independent of both (different provider,
+different credentials) and can be applied any time:
 
 ```sh
 cd infomaniak && tofu init && tofu apply
 cd ../infomaniak-k8s && tofu init && tofu apply
+cd ../infomaniak-storage && tofu init && tofu apply
 ```
 
 ## License

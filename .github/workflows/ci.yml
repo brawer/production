@@ -33,13 +33,15 @@ jobs:
           echo "ci-placeholder" > secrets/bunny_api_key
           echo "ci-placeholder" > secrets/infomaniak_api_token
           echo '{"placeholder": "value"}' > secrets/infomaniak_cronjob_s3_credentials.json
+          echo "ci-placeholder" > secrets/infomaniak_s3_access_key
+          echo "ci-placeholder" > secrets/infomaniak_s3_secret_key
 
       # Retry: OpenTofu re-fetches provider signatures from GitHub's release
       # CDN on every init (even with a pinned lock file), which intermittently
       # returns 504.
       - name: Init and validate
         run: |
-          for dir in bunny infomaniak infomaniak-k8s; do
+          for dir in bunny infomaniak infomaniak-k8s infomaniak-storage; do
             for attempt in 1 2 3 4 5; do
               tofu -chdir="$dir" init -backend=false && break
               echo "::warning::tofu init ($dir) attempt $attempt failed; retrying in 20s"
