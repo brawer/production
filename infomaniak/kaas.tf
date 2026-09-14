@@ -7,25 +7,21 @@
 # that project itself (Manager -> Public Cloud -> create project), so the
 # project must already exist before applying this.
 locals {
-  # TODO: fill in with your own Public Cloud project's IDs. Find both with:
-  #   token=$(cat ../secrets/infomaniak_api_token)
-  #   account_id=$(curl -s -H "Authorization: Bearer $token" \
-  #     https://api.infomaniak.com/2/profile | jq '.data.preferences.account.current_account_id')
-  #   curl -s -H "Authorization: Bearer $token" \
-  #     "https://api.infomaniak.com/1/public_clouds?account_id=$account_id" \
-  #     | jq '.data[] | {name: .customer_name, cloud_id: .id}'
-  #   curl -s -H "Authorization: Bearer $token" \
-  #     "https://api.infomaniak.com/1/public_clouds/<cloud_id>/projects" \
-  #     | jq '.data[] | {name: .name, project_id: .public_cloud_project_id}'
-  public_cloud_id         = 0 # TODO
-  public_cloud_project_id = 0 # TODO
+  public_cloud_id         = 23824
+  public_cloud_project_id = 47516
 
-  # TODO: verify against the project's actual region and the Kubernetes
-  # versions currently on offer - Manager -> Public Cloud -> Kubernetes ->
-  # create cluster shows both (or, with the project's clouds.yaml,
-  # `openstack region list`).
-  kaas_region             = "TODO"
-  kaas_kubernetes_version = "1.31"
+  # UNVERIFIED: "Data Center 4" is the label shown in the Manager UI: the
+  # provider's own examples use short API slugs instead (e.g. "dc-3"), so
+  # this may need to become one of those instead. Region/version are only
+  # checked against the real API at apply time (`tofu validate` can't catch
+  # a wrong value here) - if `tofu apply` rejects it, find the actual slug
+  # via `openstack region list` (project's clouds.yaml) or the cluster
+  # creation screen in Manager -> Public Cloud -> Kubernetes.
+  kaas_region = "Data Center 4"
+
+  # UNVERIFIED: whether Infomaniak's KaaS offering has 1.36 available yet -
+  # same apply-time caveat as region.
+  kaas_kubernetes_version = "1.36"
 }
 
 # pack_name = "shared" is the public/shared control plane, which is free; a
