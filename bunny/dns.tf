@@ -2,9 +2,8 @@
 # SPDX-FileCopyrightText: 2026 Sascha Brawer
 
 locals {
-  # Domains with a Bunny-hosted DNS zone. brawer.ch is staged ahead of the
-  # registrar nameserver change (issue #6): its zone and records exist here,
-  # but the registrar still points elsewhere, so it's live nowhere yet. See
+  # Domains with a Bunny-hosted DNS zone. Both registrar-transferred to
+  # Infomaniak and NS-delegated to Bunny (issue #6, verified 2026-09-14). See
   # local.sites (cdn.tf) for each domain's cutover flag.
   dns_domains = ["dandelis.ch", "brawer.ch"]
 
