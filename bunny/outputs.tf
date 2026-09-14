@@ -64,8 +64,11 @@ output "s3_credentials" {
 
 # Nameservers to set at the registrar to move DNS to Bunny.
 output "dns_nameservers" {
-  description = "Nameservers to configure at the registrar for the managed domain."
-  value       = [bunnynet_dns_zone.this.nameserver1, bunnynet_dns_zone.this.nameserver2]
+  description = "Map of domain => nameservers to configure at its registrar."
+  value = {
+    for domain, zone in bunnynet_dns_zone.this :
+    domain => [zone.nameserver1, zone.nameserver2]
+  }
 }
 
 # Pull zone IDs, for a manual cache purge from a trusted machine (the deploy
