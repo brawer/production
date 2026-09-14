@@ -3,15 +3,12 @@
 
 # CDN layer: one Bunny pull zone per site, each fronting a storage zone.
 #
-# dandelis.ch was the guinea pig for the brawer.ch migration; both now live
-# side by side here (issue #6), sharing the same origin storage zones (they're
-# domain-independent). Each site is keyed by its canonical hostname; the pull
-# zone name is that hostname with dots turned to dashes (dandelis.ch ->
-# dandelis-ch), so each brawer.ch entry is a literal "dandelis" -> "brawer"
-# substitution of the matching dandelis.ch block, plus a per-domain cutover
-# flag (see below) - both domains are now delegated to Bunny (registrar
-# transferred to Infomaniak, NS -> kiki/coco.bunny.net, verified 2026-09-14),
-# so cutover is true everywhere.
+# dandelis.ch was the guinea pig for the brawer.ch migration (issue #6) and
+# has since been decommissioned (2026-09-14, DNS-only staging - never a real
+# mailbox): brawer.ch is the real live domain now, sharing the same origin
+# storage zones (they're domain-independent). Each site is keyed by its
+# canonical hostname; the pull zone name is that hostname with dots turned to
+# dashes (brawer.ch -> brawer-ch).
 #
 #   domain      - the DNS domain (key in dns.tf's local.dns_domains) this site's
 #                 hostnames belong to. Always the site's own apex or an ancestor
@@ -39,47 +36,11 @@
 #                 number (here or in the dashboard). A traffic guard, not a
 #                 billing feature - the absolute backstop is the prepaid account
 #                 balance with auto-recharge OFF, which no zone can spend past.
-#                 dandelis.ch values are for the staging setup (low traffic);
 #                 brawer.ch (issue #6) uses roughly hugo 25, spa 300, data zone
 #                 300 - keeping the sum near EUR 50 even at the $0.03/GB Asia
 #                 rate (EU + North America is $0.01/GB; no per-request fees).
 locals {
   sites = {
-    "dandelis.ch" = {
-      domain                 = "dandelis.ch"
-      cutover                = true
-      origin_zone            = "brawer-homepage"
-      aliases                = ["www.dandelis.ch"]
-      data_zone              = null
-      data_bandwidth_cap_gib = null
-      kind                   = "hugo"
-      bandwidth_cap_gib      = 10
-    }
-    "osmviews.dandelis.ch" = {
-      domain                 = "dandelis.ch"
-      cutover                = true
-      origin_zone            = "osmviews-app"
-      aliases                = []
-      data_zone              = "osmviews-data-de"
-      data_bandwidth_cap_gib = 50
-      kind                   = "spa"
-      bandwidth_cap_gib      = 50
-    }
-    "osmdiffs.dandelis.ch" = {
-      domain                 = "dandelis.ch"
-      cutover                = true
-      origin_zone            = "osmdiffs-app"
-      aliases                = []
-      data_zone              = "osmdiffs-data-de"
-      data_bandwidth_cap_gib = 50
-      kind                   = "spa"
-      bandwidth_cap_gib      = 50
-    }
-
-    # brawer.ch mirrors dandelis.ch (issue #6): same origin storage zones (they
-    # are domain-independent). Registrar transferred to Infomaniak and NS
-    # delegated to Bunny (verified 2026-09-14 - see the file header), so
-    # cutover is now true: Bunny attempts managed TLS certificate issuance.
     "brawer.ch" = {
       domain                 = "brawer.ch"
       cutover                = true
@@ -308,7 +269,7 @@ resource "bunnynet_pullzone_edgerule" "immutable_assets" {
 #
 # Both the StatusCode trigger and the OriginUrl action exist in the provider.
 # Unverified: whether Bunny appends the request path to that OriginUrl (the
-# /data/* rule below relies on it doing exactly that) - test on dandelis.ch
+# /data/* rule below relies on it doing exactly that) - test on brawer.ch
 # before relying on it; the fallbacks are a custom error page or an edge script.
 
 # A bare pull zone (b-cdn.net only, no custom hostname) fronting the project's
