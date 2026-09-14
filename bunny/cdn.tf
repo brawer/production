@@ -3,17 +3,30 @@
 
 # CDN layer: one Bunny pull zone per site, each fronting a storage zone.
 #
-# dandelis.ch is the guinea pig for the brawer.ch migration - it mirrors the
-# layout brawer.ch will eventually use. Each site is keyed by its canonical
-# hostname; the pull zone name is that hostname with dots turned to dashes
-# (dandelis.ch -> dandelis-ch). Moving a domain to production is then a literal
-# "dandelis" -> "brawer" substitution of a copied block - the origin storage
-# zones are already domain-independent.
+# dandelis.ch was the guinea pig for the brawer.ch migration; both now live
+# side by side here (issue #6), sharing the same origin storage zones (they're
+# domain-independent). Each site is keyed by its canonical hostname; the pull
+# zone name is that hostname with dots turned to dashes (dandelis.ch ->
+# dandelis-ch), so each brawer.ch entry is a literal "dandelis" -> "brawer"
+# substitution of the matching dandelis.ch block, plus cutover = false (see
+# below) until the registrar nameserver change.
 #
+#   domain      - the DNS domain (key in dns.tf's local.dns_domains) this site's
+#                 hostnames belong to. Always the site's own apex or an ancestor
+#                 of it; aliases are assumed same-domain (e.g. a "www" prefix).
+#   cutover     - false while the domain's registrar still points elsewhere:
+#                 pull zone hostnames stay tls_enabled=false/force_ssl=false,
+#                 since Bunny's managed-cert issuance fails while the hostname
+#                 resolves to the old host. Flip to true after the registrar
+#                 nameserver change, then `tofu apply` to issue the certs.
 #   origin_zone - storage zone (key in local.storage_zones) serving the site root
 #   aliases     - extra hostnames on the pull zone, each 301-redirected to the key
 #   data_zone   - optional storage zone served at /data/* (via its own bare pull
 #                 zone and an OriginUrl edge rule; see below)
+#   data_bandwidth_cap_gib - monthly egress ceiling (GiB) for the bare
+#                 "<site>-data" pull zone fronting data_zone; null when
+#                 data_zone is null. See bandwidth_cap_gib below for how the cap
+#                 behaves.
 #   kind        - "hugo" (Hugo static site) or "spa" (client-routed React/Vite
 #                 bundle). Selects the content-hashed URL globs for the immutable
 #                 cache edge rule (local.immutable_globs), and - spa only, still a
@@ -24,41 +37,79 @@
 #                 number (here or in the dashboard). A traffic guard, not a
 #                 billing feature - the absolute backstop is the prepaid account
 #                 balance with auto-recharge OFF, which no zone can spend past.
-#                 Values are for the dandelis.ch staging setup (low traffic);
-#                 brawer.ch (issue #6) will want more - roughly hugo 25, spa 300,
-#                 data zone 300 - keeping the sum near EUR 50 even at the
-#                 $0.03/GB Asia rate (EU + North America is $0.01/GB; no
-#                 per-request fees).
+#                 dandelis.ch values are for the staging setup (low traffic);
+#                 brawer.ch (issue #6) uses roughly hugo 25, spa 300, data zone
+#                 300 - keeping the sum near EUR 50 even at the $0.03/GB Asia
+#                 rate (EU + North America is $0.01/GB; no per-request fees).
 locals {
   sites = {
     "dandelis.ch" = {
-      origin_zone       = "brawer-homepage"
-      aliases           = ["www.dandelis.ch"]
-      data_zone         = null
-      kind              = "hugo"
-      bandwidth_cap_gib = 10
+      domain                 = "dandelis.ch"
+      cutover                = true
+      origin_zone            = "brawer-homepage"
+      aliases                = ["www.dandelis.ch"]
+      data_zone              = null
+      data_bandwidth_cap_gib = null
+      kind                   = "hugo"
+      bandwidth_cap_gib      = 10
     }
     "osmviews.dandelis.ch" = {
-      origin_zone       = "osmviews-app"
-      aliases           = []
-      data_zone         = "osmviews-data-de"
-      kind              = "spa"
-      bandwidth_cap_gib = 50
+      domain                 = "dandelis.ch"
+      cutover                = true
+      origin_zone            = "osmviews-app"
+      aliases                = []
+      data_zone              = "osmviews-data-de"
+      data_bandwidth_cap_gib = 50
+      kind                   = "spa"
+      bandwidth_cap_gib      = 50
     }
     "osmdiffs.dandelis.ch" = {
-      origin_zone       = "osmdiffs-app"
-      aliases           = []
-      data_zone         = "osmdiffs-data-de"
-      kind              = "spa"
-      bandwidth_cap_gib = 50
+      domain                 = "dandelis.ch"
+      cutover                = true
+      origin_zone            = "osmdiffs-app"
+      aliases                = []
+      data_zone              = "osmdiffs-data-de"
+      data_bandwidth_cap_gib = 50
+      kind                   = "spa"
+      bandwidth_cap_gib      = 50
+    }
+
+    # brawer.ch mirrors dandelis.ch (issue #6): same origin storage zones (they
+    # are domain-independent), staged here ahead of the registrar nameserver
+    # change. cutover=false keeps the pull zone hostnames TLS-disabled and the
+    # DNS zone dormant - no effect on the live brawer.ch (still on Hostpoint)
+    # until the registrar is switched and cutover flips to true.
+    "brawer.ch" = {
+      domain                 = "brawer.ch"
+      cutover                = false
+      origin_zone            = "brawer-homepage"
+      aliases                = ["www.brawer.ch"]
+      data_zone              = null
+      data_bandwidth_cap_gib = null
+      kind                   = "hugo"
+      bandwidth_cap_gib      = 25
+    }
+    "osmviews.brawer.ch" = {
+      domain                 = "brawer.ch"
+      cutover                = false
+      origin_zone            = "osmviews-app"
+      aliases                = []
+      data_zone              = "osmviews-data-de"
+      data_bandwidth_cap_gib = 300
+      kind                   = "spa"
+      bandwidth_cap_gib      = 300
+    }
+    "osmdiffs.brawer.ch" = {
+      domain                 = "brawer.ch"
+      cutover                = false
+      origin_zone            = "osmdiffs-app"
+      aliases                = []
+      data_zone              = "osmdiffs-data-de"
+      data_bandwidth_cap_gib = 300
+      kind                   = "spa"
+      bandwidth_cap_gib      = 300
     }
   }
-
-  # Monthly egress ceiling (GiB) for each bare "<site>-data" pull zone - the
-  # inner cache tier the spa sites reach through the /data/* OriginUrl rewrite.
-  # Staging value; the brawer.ch data zones will want ~300. See bandwidth_cap_gib
-  # above for how the cap behaves.
-  data_bandwidth_cap_gib = 50
 
   # Edge + browser TTL (seconds) for immutable-by-URL assets: content-hashed
   # build output (immutable_assets, below) and the projects' dated data files
@@ -107,6 +158,8 @@ locals {
         site      = host
         hostname  = h
         canonical = host
+        domain    = cfg.domain
+        cutover   = cfg.cutover
       }
     }
   ]...)
@@ -155,14 +208,17 @@ resource "bunnynet_pullzone" "site" {
 
 # Custom hostnames. Omitting certificate/certificate_key selects a managed
 # Let's Encrypt certificate, which Bunny issues once the hostname resolves to
-# the pull zone (i.e. after the registrar nameserver switch).
+# the pull zone (i.e. after the registrar nameserver switch). tls_enabled/
+# force_ssl track each site's cutover flag: staying false keeps a pre-staged
+# domain's managed-cert issuance from being attempted (and failing) while it
+# still resolves to its old host.
 resource "bunnynet_pullzone_hostname" "site" {
   for_each = local.site_hostnames
 
   pullzone    = bunnynet_pullzone.site[each.value.site].id
   name        = each.value.hostname
-  tls_enabled = true
-  force_ssl   = true
+  tls_enabled = each.value.cutover
+  force_ssl   = each.value.cutover
 }
 
 # 301 every alias hostname to the canonical one, preserving the path.
@@ -283,10 +339,10 @@ resource "bunnynet_pullzone" "data" {
   cache_expiration_time_browser = local.data_manifest_max_age
   cache_stale                   = ["updating", "offline"]
 
-  # Monthly egress ceiling - see local.data_bandwidth_cap_gib. Clients reach this
-  # zone only through the site zone's /data/* OriginUrl hop, so in practice its
-  # counter tracks the site zone's data misses.
-  limit_bandwidth = local.data_bandwidth_cap_gib * 1024 * 1024 * 1024
+  # Monthly egress ceiling - see local.sites[*].data_bandwidth_cap_gib. Clients
+  # reach this zone only through the site zone's /data/* OriginUrl hop, so in
+  # practice its counter tracks the site zone's data misses.
+  limit_bandwidth = each.value.data_bandwidth_cap_gib * 1024 * 1024 * 1024
 }
 
 # Route /data/* on the site to its data pull zone. Bunny appends the request
