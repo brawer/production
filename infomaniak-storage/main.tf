@@ -23,23 +23,37 @@ terraform {
 
 # Credentials are OpenStack EC2-style access/secret keys, NOT the Infomaniak
 # account API token (secrets/infomaniak_api_token, used by ../infomaniak) -
-# object storage isn't reachable through that account API at all. Generate
-# them once (they don't need to change unless rotated):
-#   1. Download the project's clouds.yaml (Manager -> Public Cloud -> your
-#      project -> OpenStack API) to ~/.config/openstack/clouds.yaml.
-#   2. `openstack ec2 credentials create` (installs via `pip install
-#      python-openstackclient`) and save the two values it prints to
-#      secrets/infomaniak_s3_access_key / secrets/infomaniak_s3_secret_key
-#      (gitignored, no trailing newline).
+# object storage isn't reachable through that account API at all. Created by
+# ../infomaniak-s3-auth (openstack_identity_ec2_credential_v3), read back
+# via terraform_remote_state rather than a direct reference for the same
+# reason infomaniak-k8s reads infomaniak's kubeconfig that way: provider
+# config can't depend on a value only known after this same apply creates
+# the resource it comes from.
+data "terraform_remote_state" "infomaniak_s3_auth" {
+  backend = "local"
+  config = {
+    path = "${path.module}/../infomaniak-s3-auth/terraform.tfstate"
+  }
+}
+
 provider "aws" {
-  access_key = trimspace(file("${path.module}/../secrets/infomaniak_s3_access_key"))
-  secret_key = trimspace(file("${path.module}/../secrets/infomaniak_s3_secret_key"))
+  access_key = data.terraform_remote_state.infomaniak_s3_auth.outputs.access
+  secret_key = data.terraform_remote_state.infomaniak_s3_auth.outputs.secret
 
   region = "us-east-1" # compatibility placeholder only, see above
 
   skip_credentials_validation = true
   skip_region_validation      = true
   skip_requesting_account_id  = true
+
+  # Required: Infomaniak's S3 layer doesn't support virtual-hosted-style
+  # addressing (bucket.s3.pub1.infomaniak.cloud) - their own docs say to set
+  # forcePathStyle=true "otherwise it may fail on some bucket operations".
+  # Confirmed the hard way: omitting this made plain CreateBucket fail with
+  # "InvalidBucketName" (TF_LOG=DEBUG showed aws.region=aws-global, i.e. the
+  # SDK routing CreateBucket through its virtual-hosted-style global S3
+  # endpoint logic instead of our custom one).
+  s3_use_path_style = true
 
   endpoints {
     s3 = "https://s3.pub1.infomaniak.cloud"
