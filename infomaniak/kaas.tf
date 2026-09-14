@@ -10,8 +10,12 @@ locals {
   public_cloud_id         = 23824
   public_cloud_project_id = 47516
 
-  # "Data Center 4" (Manager UI label) -> "dc-4" API slug.
-  kaas_region             = "dc-4"
+  # Verified against the real API (GET /1/public_clouds/kaas/regions and
+  # .../versions, with secrets/infomaniak_api_token): "dc-4" (a guess from
+  # the Manager UI's "Data Center 4" label) was wrong - the actual slug is
+  # "dc4-a" (the other option is "dc3-a"). 1.36 is confirmed offered
+  # (available: 1.36, 1.35, 1.34, 1.33, 1.32).
+  kaas_region             = "dc4-a"
   kaas_kubernetes_version = "1.36"
 }
 
@@ -45,15 +49,17 @@ resource "infomaniak_kaas_instance_pool" "cronjobs" {
 
   name = "cronjobs"
 
-  # TODO: pick a flavor with >= 8 vCPUs / >= 8 GiB RAM (the cronjob's
-  # requirements - see infomaniak-k8s/cronjob.tf) from `openstack flavor
-  # list` (using the project's clouds.yaml) or Manager -> Public Cloud ->
-  # Compute -> Flavors. Infomaniak's naming looks like "a1-ram2-disk20-perf1"
-  # (class+vCPUs, RAM GiB, disk GiB, perf tier).
-  flavor_name = "TODO"
+  # Smallest flavor from GET .../kaas/flavors?region=dc4-a that clears the
+  # cronjob's 8 vCPU / 8 GiB request (infomaniak-k8s/cronjob.tf) with real
+  # headroom for kubelet/system overhead - double the RAM request, not an
+  # exact match (a flavor sized exactly 8/8 would likely leave the pod
+  # unschedulable). At ~4h/week (scale-to-zero below) this is well under
+  # $1/month ($0.0374/h incl. tax).
+  flavor_name = "a8-ram16-disk20-perf1"
 
-  # TODO: verify against `openstack availability zone list` for this project.
-  availability_zone = "TODO"
+  # One of az-1/az-2/az-3 (GET .../kaas/availability_zones?region=dc4-a) -
+  # arbitrary pick, no cross-AZ requirement for a single-node pool.
+  availability_zone = "az-1"
 
   min_instances = 0
   max_instances = 2
