@@ -235,22 +235,23 @@ curl -T ./index.html -H "AccessKey: $(tofu output -json passwords | jq -r ".\"$z
 
 ## Infomaniak
 
-Three more OpenTofu root modules — `infomaniak/`, `infomaniak-k8s/`, and
-`infomaniak-storage/` — each with its own local state and its own
-credentials (three different Infomaniak auth mechanisms; see each module's
-Setup below). `infomaniak/` and `infomaniak-k8s/` are separate modules (not
-just separate files) because configuring the `kubernetes` provider from a
-cluster's own kubeconfig output in the same apply that creates the cluster
-is unreliable (provider config can't depend on a value that's unknown until
-that apply's resources are actually created); `infomaniak-k8s/` instead
-reads the kubeconfig back from `infomaniak/`'s already-applied state via
-`terraform_remote_state`.
+Four more OpenTofu root modules — `infomaniak/`, `infomaniak-k8s/`,
+`infomaniak-s3-auth/`, and `infomaniak-storage/` — each with its own local
+state and its own credentials (three different Infomaniak auth mechanisms;
+see each module's Setup below). Two module boundaries here aren't just file
+organization but work around the same constraint: a provider can't be
+configured from a value that's only known after that same apply creates the
+resource it comes from. `infomaniak-k8s/` reads its kubeconfig back from
+`infomaniak/`'s already-applied state via `terraform_remote_state`, and
+`infomaniak-storage/` reads its S3 credential back from
+`infomaniak-s3-auth/`'s the same way.
 
 | | |
 |---|---|
 | **`infomaniak/`** | Managed Kubernetes (KaaS) cluster, via the [Infomaniak provider](https://registry.terraform.io/providers/Infomaniak/infomaniak/latest) |
 | **`infomaniak-k8s/`** | The CronJob workload on that cluster, via `hashicorp/kubernetes` |
-| **`infomaniak-storage/`** | S3-compatible Object Storage buckets (Infomaniak Public Cloud), via `hashicorp/aws` pointed at a custom endpoint |
+| **`infomaniak-s3-auth/`** | An OpenStack EC2 credential (S3 access/secret keys) for the project, via `terraform-provider-openstack/openstack` |
+| **`infomaniak-storage/`** | S3-compatible Object Storage buckets, via `hashicorp/aws` pointed at a custom endpoint, using that credential |
 | **State** | Local (`<module>/terraform.tfstate`, all gitignored) |
 | **Cost** | KaaS control plane free (`pack_name = "shared"`); worker node(s) billed only while running (`min_instances = 0`, scale-to-zero, ~$0.04/h when up); Object Storage billed per GB stored/transferred |
 
@@ -292,6 +293,35 @@ comment in `cronjob.tf` for its shape) with the real credentials, and verify
 `storage_class_name` against `kubectl get storageclass` once the cluster
 exists.
 
+### S3 credential (`infomaniak-s3-auth/main.tf`)
+
+Object Storage isn't reachable through the Infomaniak account API at all —
+only through the OpenStack API for the Public Cloud project, using OpenStack
+EC2-style access/secret keys, not the account token. Rather than the manual
+"download `clouds.yaml`, run `openstack ec2 credentials create`" flow
+Infomaniak's own docs describe, this module gets there entirely via the
+account API and Terraform:
+
+- Connection details (`auth_url`, project ID, username, domains, region) —
+  fetched once via `GET .../users/{id}/openrc` (an async job; see the
+  comments in `main.tf` for the exact calls) instead of a downloaded
+  `clouds.yaml`.
+- A password for the project's OpenStack user — this project's user had
+  none, so one was set once via `PATCH .../users/{id}` (the one manual,
+  non-Terraform-managed bootstrap step here, parallel to the Public Cloud
+  project itself needing to exist first for `infomaniak/`). Stored in
+  `secrets/infomaniak_openstack_password`; rotating it means re-running that
+  `PATCH` with the new value.
+- The actual EC2 credential — `openstack_identity_ec2_credential_v3`, a real
+  Terraform resource that does exactly what `openstack ec2 credentials
+  create` does.
+
+**Unverified / worth knowing:** the AWS provider's default (virtual-hosted-
+style S3 addressing) fails against Infomaniak's Swift-S3 layer with
+`InvalidBucketName` on `CreateBucket` — `infomaniak-storage/`'s
+`s3_use_path_style = true` is required, not cosmetic; removing it breaks bucket
+creation (confirmed by reproducing the failure with `TF_LOG=DEBUG`).
+
 ### Object Storage (`infomaniak-storage/buckets.tf`)
 
 Internal-only S3 buckets (logs, inter-run caches for scheduled jobs — not for
@@ -299,46 +329,81 @@ public downloads, that's Bunny's `/data/*` CDN). Infomaniak Public Cloud
 Object Storage is Swift with an S3-compatible layer on top and has no
 dedicated Infomaniak Terraform resource, so this module talks to it like any
 other S3-compatible service: `hashicorp/aws` pointed at
-`https://s3.pub1.infomaniak.cloud` with path-style addressing, `region` a
-pure compatibility placeholder (data stays in Infomaniak's Swiss DCs
-regardless). Buckets are private by default (nothing here sets a
-public-read policy); `local.buckets` currently has one entry,
-`osmdiffs-internal`, for the weekly cronjob above.
-
-Credentials are **OpenStack EC2-style access/secret keys, not the Infomaniak
-account API token** — Object Storage isn't reachable through that account
-API at all, only through the OpenStack API for the Public Cloud project. See
-Setup below.
+`https://s3.pub1.infomaniak.cloud`, path-style addressing (see above),
+`region` a pure compatibility placeholder (data stays in Infomaniak's Swiss
+DCs regardless), credentials from `infomaniak-s3-auth/`. Buckets are private
+by default (nothing here sets a public-read policy); `local.buckets`
+currently has one entry, **`osmdiffs-internal`** (live, created 2026-09-14),
+for the weekly cronjob above.
 
 ### Setup
 
 1. Create an Infomaniak account API token (used by `infomaniak/`'s
-   `infomaniak_kaas` resources) at
+   `infomaniak_kaas` resources and `infomaniak-s3-auth/`'s OpenRC/password
+   calls) at
    <https://www.infomaniak.com/en/support/faq/2582/generate-and-manage-infomaniak-api-tokens>
    — Public Cloud read+write scope covers everything here — and save it,
    with no trailing newline, to `secrets/infomaniak_api_token`.
-2. For `infomaniak-storage/`: download the project's `clouds.yaml` (Manager
-   → Public Cloud → your project → OpenStack API) to
-   `~/.config/openstack/clouds.yaml`, then `openstack ec2 credentials
-   create` (`pip install python-openstackclient`) and save the two printed
-   values to `secrets/infomaniak_s3_access_key` /
-   `secrets/infomaniak_s3_secret_key`.
+2. Bootstrap `infomaniak-s3-auth/`'s OpenStack password (one-time, see that
+   module's comments for the exact `PATCH` call) and save it to
+   `secrets/infomaniak_openstack_password`.
 3. Create `secrets/infomaniak_cronjob_s3_credentials.json` (see
    `infomaniak-k8s/cronjob.tf`) and replace `cronjob.tf`'s placeholder
    image/command with the real job.
 
 ### Usage
 
-Apply the cluster before the workload — `infomaniak-k8s/` reads the
-kubeconfig back from `infomaniak/`'s state, so it needs that state to exist.
-`infomaniak-storage/` is independent of both (different provider,
-different credentials) and can be applied any time:
+Apply in dependency order — each of these reads the previous one's state via
+`terraform_remote_state`:
 
 ```sh
 cd infomaniak && tofu init && tofu apply
 cd ../infomaniak-k8s && tofu init && tofu apply
+
+cd ../infomaniak-s3-auth && tofu init && tofu apply
 cd ../infomaniak-storage && tofu init && tofu apply
 ```
+
+(The two pairs are independent of each other — different providers, different
+credentials.)
+
+For your own manual access (`aws`/`s3cmd` from a workstation, not through
+Terraform), get the credential values with:
+
+```sh
+cd infomaniak-s3-auth
+tofu output -raw access
+tofu output -raw secret
+```
+
+and point your client at the endpoint from `infomaniak-storage`'s
+`s3_endpoint` output, with **path-style addressing** — same requirement as
+the Terraform provider above. For the AWS CLI, a named profile
+(`~/.aws/config`):
+
+```ini
+[profile infomaniak]
+region = us-east-1
+s3 =
+    addressing_style = path
+    endpoint_url = https://s3.pub1.infomaniak.cloud
+```
+
+then `aws --profile infomaniak s3 ls s3://osmdiffs-internal`. For `s3cmd`, a
+separate config file (e.g. `~/.s3cfg-infomaniak`, so it doesn't touch any
+default `~/.s3cfg`):
+
+```ini
+[default]
+access_key = <from tofu output>
+secret_key = <from tofu output>
+host_base = s3.pub1.infomaniak.cloud
+host_bucket = s3.pub1.infomaniak.cloud/%(bucket)s
+use_https = True
+signature_v2 = False
+```
+
+then `s3cmd -c ~/.s3cfg-infomaniak ls s3://osmdiffs-internal`.
 
 ## License
 
