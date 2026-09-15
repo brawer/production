@@ -379,19 +379,31 @@ tofu output -raw secret
 and point your client at the endpoint from `infomaniak-storage`'s
 `s3_endpoint` output, with **path-style addressing** — same requirement as
 the Terraform provider above. For the AWS CLI, a named profile
-(`~/.aws/config`):
+(`~/.aws/config`) — verified working end-to-end (`cp`/`ls`/`rm`) with
+**both** settings below; each was a real, reproduced failure without it:
 
 ```ini
 [profile infomaniak]
 region = us-east-1
+endpoint_url = https://s3.pub1.infomaniak.cloud
+# NOT nested under `s3 =` below - that block is only for other S3 settings
+# (addressing_style etc.); a nested endpoint_url there is silently ignored
+# and every request goes to real AWS instead, failing with
+# InvalidAccessKeyId (since our key isn't a real AWS key).
+request_checksum_calculation = when_required
+response_checksum_validation = when_required
+# Without the two checksum settings above, `s3 cp` uploads fail with
+# "NotImplemented: Transfering payloads in multiple chunks using
+# aws-chunked is not supported" - the CLI's default streaming-checksum
+# upload encoding, which Infomaniak's Swift-S3 layer doesn't implement.
 s3 =
     addressing_style = path
-    endpoint_url = https://s3.pub1.infomaniak.cloud
 ```
 
-then `aws --profile infomaniak s3 ls s3://osmdiffs-internal`. For `s3cmd`, a
-separate config file (e.g. `~/.s3cfg-infomaniak`, so it doesn't touch any
-default `~/.s3cfg`):
+then `aws --profile infomaniak s3 ls s3://osmdiffs-internal`. For `s3cmd`
+(`brew install s3cmd`), a separate config file (e.g. `~/.s3cfg-infomaniak`,
+so it doesn't touch any default `~/.s3cfg`) — also verified end-to-end
+(`put`/`ls`/`get`/`del`):
 
 ```ini
 [default]
@@ -400,10 +412,13 @@ secret_key = <from tofu output>
 host_base = s3.pub1.infomaniak.cloud
 host_bucket = s3.pub1.infomaniak.cloud/%(bucket)s
 use_https = True
-signature_v2 = False
+signature_v2 = True
 ```
 
-then `s3cmd -c ~/.s3cfg-infomaniak ls s3://osmdiffs-internal`.
+`signature_v2 = True` (not `False`): SigV4 gave `403 SignatureDoesNotMatch`
+on any bucket-scoped request (bare `s3cmd ls` with no bucket worked either
+way) - a known rough edge for `s3cmd` against non-AWS S3-compatible
+backends. Then `s3cmd -c ~/.s3cfg-infomaniak ls s3://osmdiffs-internal`.
 
 ## License
 
