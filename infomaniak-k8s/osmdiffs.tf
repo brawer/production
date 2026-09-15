@@ -10,9 +10,6 @@
 # objects distinctly named so they don't collide or get confused.
 #
 # TODO before first apply:
-#  - image: ghcr.io/brawer/osmdiffs:v0.8.5 doesn't exist yet as of writing -
-#    confirm the release has been cut before applying, or this just sits in
-#    ImagePullBackOff.
 #  - storage_class_name: verify with `kubectl get storageclass` once the
 #    cluster exists - Infomaniak's CSI Cinder driver's default class name is
 #    unverified here.
@@ -83,8 +80,7 @@ resource "kubernetes_cron_job_v1" "osmdiffs" {
             restart_policy = "Never"
 
             container {
-              name = "osmdiffs"
-              # TODO: v0.8.5 doesn't exist yet - see the file header.
+              name  = "osmdiffs"
               image = "ghcr.io/brawer/osmdiffs:v0.8.5"
 
               # No `command`: the image's own ENTRYPOINT is the osmdiffs
