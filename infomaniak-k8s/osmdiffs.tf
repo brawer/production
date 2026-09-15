@@ -9,10 +9,6 @@
 # project's scheduled job over time - keep each project's Kubernetes
 # objects distinctly named so they don't collide or get confused.
 #
-# TODO before first apply:
-#  - storage_class_name: verify with `kubectl get storageclass` once the
-#    cluster exists - Infomaniak's CSI Cinder driver's default class name is
-#    unverified here.
 locals {
   # The pipeline needs two independent S3 destinations (PRODUCTION.md):
   # PUBLIC_S3_* for downloads via CDN, INTERNAL_S3_* for logs/intermediates.
@@ -145,9 +141,17 @@ resource "kubernetes_cron_job_v1" "osmdiffs" {
                   spec {
                     access_modes = ["ReadWriteOnce"]
 
-                    # TODO: verify this is the cluster's actual default/CSI
-                    # storage class name once it exists.
-                    storage_class_name = "csi-cinder-high-speed"
+                    # CONFIRMED via `kubectl get storageclass` once the
+                    # cluster existed: real classes are csi-cinder-sc-delete
+                    # and csi-cinder-sc-retain (the default) -
+                    # "csi-cinder-high-speed" (guessed from the naming
+                    # pattern before the cluster existed) was wrong. -delete
+                    # is the right one here regardless of which is default:
+                    # it matches this volume's actual lifecycle (deleted
+                    # with the pod each run, see the ephemeral comment
+                    # above) - -retain would silently leak a Cinder volume
+                    # every week.
+                    storage_class_name = "csi-cinder-sc-delete"
 
                     # PRODUCTION.md: peak ~172GB during a run, settling to
                     # ~143GB after; recommends 220-250GB capacity headroom.
