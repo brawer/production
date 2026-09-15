@@ -10,7 +10,9 @@
 # objects distinctly named so they don't collide or get confused.
 #
 # TODO before first apply:
-#  - image/command: replace the busybox placeholder with the real job.
+#  - image: ghcr.io/brawer/osmdiffs:v0.8.5 doesn't exist yet as of writing -
+#    confirm the release has been cut before applying, or this just sits in
+#    ImagePullBackOff.
 #  - storage_class_name: verify with `kubectl get storageclass` once the
 #    cluster exists - Infomaniak's CSI Cinder driver's default class name is
 #    unverified here.
@@ -81,19 +83,47 @@ resource "kubernetes_cron_job_v1" "osmdiffs" {
             restart_policy = "Never"
 
             container {
-              name    = "osmdiffs"
-              image   = "busybox" # TODO: replace with the real image
-              command = ["/bin/sh", "-c", "echo TODO: replace with the real command"]
+              name = "osmdiffs"
+              # TODO: v0.8.5 doesn't exist yet - see the file header.
+              image = "ghcr.io/brawer/osmdiffs:v0.8.5"
+
+              # No `command`: the image's own ENTRYPOINT is the osmdiffs
+              # binary (PRODUCTION.md's invocation is
+              # `osmdiffs run --workdir /workdir --run_id "$RUN_ID"`), so
+              # only the args need setting here. $(RUN_ID) is Kubernetes'
+              # native env-var substitution in command/args (no shell
+              # needed) - see the RUN_ID env var below.
+              args = ["run", "--workdir", "/workdir", "--run_id", "$(RUN_ID)"]
+
+              # PRODUCTION.md: "--run_id: identifier for provenance
+              # tracking (normalized to [A-Za-z0-9._-])". The pod's own
+              # name is unique per run (CronJob -> Job -> Pod, each with a
+              # generated suffix) and already fits that character set.
+              env {
+                name = "RUN_ID"
+                value_from {
+                  field_ref {
+                    field_path = "metadata.name"
+                  }
+                }
+              }
 
               resources {
                 requests = {
-                  cpu    = "8"
+                  cpu    = "6"
                   memory = "8Gi"
                 }
                 limits = {
-                  cpu    = "8"
+                  cpu    = "6"
                   memory = "8Gi"
                 }
+              }
+
+              # PRODUCTION.md's invocation runs with `--read-only` (immutable
+              # root filesystem); /workdir below is the only writable path
+              # the pipeline needs.
+              security_context {
+                read_only_root_filesystem = true
               }
 
               env_from {
@@ -103,13 +133,13 @@ resource "kubernetes_cron_job_v1" "osmdiffs" {
               }
 
               volume_mount {
-                name       = "scratch"
-                mount_path = "/scratch"
+                name       = "workdir"
+                mount_path = "/workdir"
               }
             }
 
             volume {
-              name = "scratch"
+              name = "workdir"
 
               # An ephemeral (inline) PVC: created fresh for each Job's pod
               # and deleted with it, so a stale scratch volume never lingers
@@ -123,9 +153,11 @@ resource "kubernetes_cron_job_v1" "osmdiffs" {
                     # storage class name once it exists.
                     storage_class_name = "csi-cinder-high-speed"
 
+                    # PRODUCTION.md: peak ~172GB during a run, settling to
+                    # ~143GB after; recommends 220-250GB capacity headroom.
                     resources {
                       requests = {
-                        storage = "200Gi"
+                        storage = "250Gi"
                       }
                     }
                   }
