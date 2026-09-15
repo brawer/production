@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Sascha Brawer
 
 # Managed Kubernetes (KaaS) cluster to run scheduled batch jobs on - see
-# infomaniak-k8s/cronjob.tf for the actual workload. Lives inside an existing
+# infomaniak-k8s/osmdiffs.tf for the actual workload. Lives inside an existing
 # Infomaniak Public Cloud project; this provider has no resource to create
 # that project itself (Manager -> Public Cloud -> create project), so the
 # project must already exist before applying this.
@@ -32,16 +32,18 @@ resource "infomaniak_kaas" "cronjobs" {
   region             = local.kaas_region
 }
 
-# One node pool, scaled to zero when idle: the cronjob it exists for
-# (infomaniak-k8s/cronjob.tf) runs ~4h once a week, so a fixed always-on node
-# would sit idle >99% of the time. min_instances = 0 asks the cluster
-# autoscaler to remove the last node once nothing needs it and add one back
-# when the CronJob's Job is scheduled.
-#
-# UNVERIFIED: whether Infomaniak's autoscaler actually supports scaling from
-# zero (some managed-Kubernetes autoscalers need at least one node to observe
-# a pending pod). Watch the first scheduled run to confirm before relying on
-# it; the fallback is min_instances = 1.
+# One node pool. The cronjob it exists for (infomaniak-k8s/osmdiffs.tf) runs
+# ~3h once a week, so a fixed always-on node would sit idle >99% of the
+# time - min_instances = 0 was the intent (scale to zero when idle, autoscale
+# a node back up when the CronJob's Job is pending), but it doesn't work:
+# CONFIRMED (2026-09, real apply) the API rejects it - "The maximum
+# instances must be greater than or equal minimum instances. The minimum
+# instances field is required." - min_instances = 0 in the request body is
+# apparently indistinguishable from "not set" (a Go zero-value/omitempty
+# thing on either the provider or API side), so the required-field check
+# fails. min_instances = 1 is the confirmed-working fallback: one node runs
+# at all times, at flavor_name's ~$0.0374/h ($27/month) rather than only
+# ~$0.45/month for the actual weekly runtime.
 resource "infomaniak_kaas_instance_pool" "cronjobs" {
   public_cloud_id         = infomaniak_kaas.cronjobs.public_cloud_id
   public_cloud_project_id = infomaniak_kaas.cronjobs.public_cloud_project_id
@@ -50,17 +52,16 @@ resource "infomaniak_kaas_instance_pool" "cronjobs" {
   name = "cronjobs"
 
   # Smallest flavor from GET .../kaas/flavors?region=dc4-a that clears the
-  # cronjob's 8 vCPU / 8 GiB request (infomaniak-k8s/cronjob.tf) with real
+  # cronjob's 6 vCPU / 8 GiB request (infomaniak-k8s/osmdiffs.tf) with real
   # headroom for kubelet/system overhead - double the RAM request, not an
-  # exact match (a flavor sized exactly 8/8 would likely leave the pod
-  # unschedulable). At ~4h/week (scale-to-zero below) this is well under
-  # $1/month ($0.0374/h incl. tax).
+  # exact match (a flavor sized exactly to the request would likely leave
+  # the pod unschedulable).
   flavor_name = "a8-ram16-disk20-perf1"
 
   # One of az-1/az-2/az-3 (GET .../kaas/availability_zones?region=dc4-a) -
   # arbitrary pick, no cross-AZ requirement for a single-node pool.
   availability_zone = "az-1"
 
-  min_instances = 0
+  min_instances = 1
   max_instances = 2
 }
