@@ -75,6 +75,20 @@ resource "kubernetes_cron_job_v1" "osmdiffs" {
           spec {
             restart_policy = "Never"
 
+            # CONFIRMED via a real test run: the image runs as a fixed
+            # non-root UID (1000 - see brawer/osmdiffs#812), but the
+            # Cinder-backed ephemeral volume mounts owned by root - without
+            # this, the container fails immediately
+            # ("failed to open log file /workdir/pipeline.log: Permission
+            # denied"). fs_group makes the kubelet chown the volume to this
+            # GID and adds it as a supplemental group on the container's
+            # process, regardless of the image's own /etc/group - doesn't
+            # need to be the image's real GID (unknown), any fixed value
+            # works, so this just matches the known UID.
+            security_context {
+              fs_group = "1000"
+            }
+
             container {
               name  = "osmdiffs"
               image = "ghcr.io/brawer/osmdiffs:v0.8.5"
