@@ -71,8 +71,17 @@ resource "kubernetes_cron_job_v1" "osmdiffs" {
     job_template {
       metadata {}
       spec {
-        backoff_limit           = 1
-        active_deadline_seconds = 6 * 3600 # hard stop at 6h; job takes ~3-4h
+        backoff_limit = 1
+        # CONFIRMED via a real run (osmdiffs-manual-test-3) that 6h was too
+        # tight: PRODUCTION.md's ~3-4h estimate held for the earlier
+        # import/conflate steps, but the pipeline was still legitimately
+        # working (active CPU/memory use, real per-tile progress in
+        # join_conflated_tiles) when Kubernetes killed it at exactly 6h
+        # (DeadlineExceeded fails the whole Job - unlike a container OOM or
+        # crash, backoff_limit doesn't get a chance to retry it). 16h is a
+        # deliberately generous ceiling until a real run's actual total is
+        # known - tighten it once we have that number.
+        active_deadline_seconds = 16 * 3600
 
         template {
           metadata {}
