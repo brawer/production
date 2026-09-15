@@ -25,14 +25,12 @@ jobs:
       - name: Format check
         run: tofu fmt -check -recursive -diff
 
-      # The provider blocks (and infomaniak-k8s's S3-credentials local) read
-      # gitignored secrets/ files. validate/init never contact any API, so
-      # placeholders are enough.
+      # The provider blocks read gitignored secrets/ files. validate/init
+      # never contact any API, so placeholders are enough.
       - name: Provide placeholder secrets
         run: |
           echo "ci-placeholder" > secrets/bunny_api_key
           echo "ci-placeholder" > secrets/infomaniak_api_token
-          echo '{"placeholder": "value"}' > secrets/infomaniak_cronjob_s3_credentials.json
           echo "ci-placeholder" > secrets/infomaniak_openstack_password
 
       # Retry: OpenTofu re-fetches provider signatures from GitHub's release

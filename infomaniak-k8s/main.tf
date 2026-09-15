@@ -24,6 +24,24 @@ data "terraform_remote_state" "infomaniak" {
   }
 }
 
+# The cronjob's two S3 destinations (see cronjob.tf) are both already
+# Terraform-managed elsewhere - read their credentials back the same way
+# infomaniak-storage reads infomaniak-s3-auth's, rather than duplicating
+# them into a separate secrets file.
+data "terraform_remote_state" "bunny" {
+  backend = "local"
+  config = {
+    path = "${path.module}/../bunny/terraform.tfstate"
+  }
+}
+
+data "terraform_remote_state" "infomaniak_s3_auth" {
+  backend = "local"
+  config = {
+    path = "${path.module}/../infomaniak-s3-auth/terraform.tfstate"
+  }
+}
+
 # UNVERIFIED: assumes the kubeconfig Infomaniak returns is a standard
 # client-certificate kubeconfig (single cluster/user - the common shape for
 # managed Kubernetes offerings). Confirm once the cluster actually exists
