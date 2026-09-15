@@ -21,17 +21,21 @@ locals {
   # secrets, not plain config - so everything goes in the one Secret below
   # rather than splitting into an env_from + separate plain env vars.
   #
-  # UNVERIFIED: the *_REGION values. Neither S3-compatible endpoint has a
-  # real AWS-style region; "DE" matches Bunny's own storage-zone region code
-  # (local.storage_zones["osmdiffs-data-de"].region in bunny/storage.tf) and
-  # "us-east-1" is the same compatibility placeholder used everywhere else
-  # in this repo for Infomaniak's S3 layer (infomaniak-storage/main.tf) -
-  # correct if the pipeline's S3 client just needs a non-empty string, wrong
-  # if it actually validates/uses the region. Check on the first real run.
+  # CONFIRMED via a real run (osmdiffs-manual-test-2): the pipeline's S3
+  # client does validate the region string, rejecting anything but
+  # lowercase ASCII/digits/'-' ("invalid config: region must contain only
+  # lowercase ASCII letters, digits, or '-'") - caught only at the very
+  # last pipeline step (upload_conflated), ~2h51m into an otherwise
+  # successful run, since neither S3-compatible endpoint has a real
+  # AWS-style region to get right in the first place. "de" is Bunny's own
+  # storage-zone region code (local.storage_zones["osmdiffs-data-de"].region
+  # in bunny/storage.tf) lowercased; "us-east-1" (already lowercase) is the
+  # same compatibility placeholder used everywhere else in this repo for
+  # Infomaniak's S3 layer (infomaniak-storage/main.tf) and needed no fix.
   osmdiffs_s3_env = {
     PUBLIC_S3_ENDPOINT          = data.terraform_remote_state.bunny.outputs.s3_endpoints["osmdiffs-data-de"]
     PUBLIC_S3_BUCKET            = "osmdiffs-data-de"
-    PUBLIC_S3_REGION            = "DE"
+    PUBLIC_S3_REGION            = "de"
     PUBLIC_S3_ACCESS_KEY_ID     = "osmdiffs-data-de" # Bunny: access key ID = zone name
     PUBLIC_S3_ACCESS_KEY_SECRET = data.terraform_remote_state.bunny.outputs.passwords["osmdiffs-data-de"]
 
