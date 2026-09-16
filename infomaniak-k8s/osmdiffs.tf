@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: MIT
 # SPDX-FileCopyrightText: 2026 Sascha Brawer
 
+# DISABLED 2026-09-16 - see main.tf for why and how to re-enable.
+/*
 # Weekly batch job: the osmdiffs pipeline (brawer/osmdiffs) - see
 # https://github.com/brawer/osmdiffs/blob/main/docs/PRODUCTION.md for the
 # authoritative env vars, invocation, and resource requirements this file
@@ -197,3 +199,4 @@ resource "kubernetes_cron_job_v1" "osmdiffs" {
     }
   }
 }
+*/
