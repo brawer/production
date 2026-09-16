@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: MIT
 # SPDX-FileCopyrightText: 2026 Sascha Brawer
 
+# DISABLED 2026-09-16 - see main.tf for why and how to re-enable.
+/*
 output "kaas_id" {
   description = "Infomaniak KaaS cluster ID."
   value       = infomaniak_kaas.cronjobs.id
@@ -20,3 +22,4 @@ output "kubeconfig" {
   value       = infomaniak_kaas.cronjobs.kubeconfig
   sensitive   = true
 }
+*/

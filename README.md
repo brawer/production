@@ -235,6 +235,14 @@ curl -T ./index.html -H "AccessKey: $(tofu output -json passwords | jq -r ".\"$z
 
 ## Infomaniak
 
+**`infomaniak/` and `infomaniak-k8s/` are currently disabled** — every
+resource in both is commented out (search either directory for "DISABLED"),
+so `tofu apply` there is a guaranteed no-op rather than silently recreating
+a real, billed Kubernetes cluster. They were torn down after a successful
+validation run; `infomaniak-s3-auth/` and `infomaniak-storage/` are
+unaffected and stay live. To use the cluster again, uncomment both
+modules' `.tf` files and follow Usage below.
+
 Four more OpenTofu root modules — `infomaniak/`, `infomaniak-k8s/`,
 `infomaniak-s3-auth/`, and `infomaniak-storage/` — each with its own local
 state and its own credentials (three different Infomaniak auth mechanisms;

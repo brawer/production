@@ -1,6 +1,24 @@
 # SPDX-License-Identifier: MIT
 # SPDX-FileCopyrightText: 2026 Sascha Brawer
 
+# DISABLED 2026-09-16: this module's workload (osmdiffs.tf) was torn down
+# together with ../infomaniak's cluster it depends on, after a successful
+# validation run - see README.md's Infomaniak section and git history.
+#
+# Everything below (and all of osmdiffs.tf, and ../infomaniak's
+# main.tf/kaas.tf/outputs.tf) is commented out rather than deleted, on
+# purpose: with nothing declared in config, `tofu apply` here is a
+# guaranteed no-op - it can't recreate real, billed infrastructure by
+# accident. Deleting the code instead would leave the same directory ready
+# to silently recreate everything on the next stray `apply`, since state is
+# already empty and would just reconcile back to whatever the .tf files
+# say.
+#
+# To use this again: uncomment this file and its counterparts (search this
+# repo for "DISABLED 2026-09-16" to find all of them), then `tofu apply` in
+# ../infomaniak first, this module second - see README.md's Usage section
+# for the full sequence.
+/*
 # Kubernetes-level resources (CronJob, Secret) for the cluster created in
 # ../infomaniak. Deliberately a separate root module/state: configuring the
 # kubernetes provider from that cluster's own (not-yet-known-at-plan-time)
@@ -60,3 +78,4 @@ provider "kubernetes" {
   client_certificate     = base64decode(local.kaas_user["client-certificate-data"])
   client_key             = base64decode(local.kaas_user["client-key-data"])
 }
+*/

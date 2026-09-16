@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: MIT
 # SPDX-FileCopyrightText: 2026 Sascha Brawer
 
+# DISABLED 2026-09-16 - see main.tf for why and how to re-enable.
+/*
 # Managed Kubernetes (KaaS) cluster to run scheduled batch jobs on - see
 # infomaniak-k8s/osmdiffs.tf for the actual workload. Lives inside an existing
 # Infomaniak Public Cloud project; this provider has no resource to create
@@ -65,3 +67,4 @@ resource "infomaniak_kaas_instance_pool" "cronjobs" {
   min_instances = 1
   max_instances = 2
 }
+*/
