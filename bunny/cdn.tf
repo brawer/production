@@ -158,6 +158,15 @@ resource "bunnynet_pullzone" "site" {
   cache_stale                   = ["updating", "offline"]
   strip_cookies                 = true
 
+  # Cache slicing ("Optimize for large object delivery" in the dashboard,
+  # EnableCacheSlice in the API). Without it, Bunny only honors byte-range
+  # requests against an object it already has fully cached, and even then not
+  # reliably (issue #38) - an uncached object is pulled from origin in full
+  # before any Range request can be served. Needed here because /data/* client
+  # reads (geotiff.js against the osmviews COG, issue #38) request tiny slices
+  # of files up to ~600 MiB; only relevant for sites that route /data/* at all.
+  cache_chunked = each.value.data_zone != null
+
   # Monthly egress ceiling - see local.sites. Left unmetered (limit_bandwidth
   # unset) a single hammered zone could run the whole prepaid balance down;
   # this stops the zone instead. `redirected_countries` is deliberately NOT set
@@ -300,6 +309,11 @@ resource "bunnynet_pullzone" "data" {
   cache_expiration_time         = local.data_manifest_max_age
   cache_expiration_time_browser = local.data_manifest_max_age
   cache_stale                   = ["updating", "offline"]
+
+  # See the site zone's cache_chunked above (issue #38) - this inner zone is
+  # the one that actually talks to the storage origin, so it also needs cache
+  # slicing for Range requests to reach the client as 206 Partial Content.
+  cache_chunked = true
 
   # Monthly egress ceiling - see local.sites[*].data_bandwidth_cap_gib. Clients
   # reach this zone only through the site zone's /data/* OriginUrl hop, so in
