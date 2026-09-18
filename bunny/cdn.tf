@@ -269,17 +269,61 @@ resource "bunnynet_pullzone_edgerule" "immutable_assets" {
   ]
 }
 
-# TODO (when the first SPA frontend is built and deployable): kind == "spa" sites
-# need a history-API fallback so client-routed paths (/osmviews/47.3/8.5) render
-# index.html instead of a storage 404. Planned shape:
+# History-API fallback for kind == "spa" sites: a client-routed path hit
+# directly (e.g. /12/47.3/8.5, not via in-app navigation) 404s against the
+# storage zone, so serve index.html instead and let the SPA's own router parse
+# the path. /data/* is excluded so a real missing data file stays a 404 rather
+# than silently becoming the app shell (issue #39).
 #
-#   trigger  StatusCode == 404  AND  Url MatchNone "*://<host>/data/*"
-#   action   OriginUrl -> "https://<pullzone>.b-cdn.net/index.html"
-#
-# Both the StatusCode trigger and the OriginUrl action exist in the provider.
-# Unverified: whether Bunny appends the request path to that OriginUrl (the
-# /data/* rule below relies on it doing exactly that) - test on brawer.ch
-# before relying on it; the fallbacks are a custom error page or an edge script.
+# Verified live on osmviews.brawer.ch (2026-09-18, temporary probe rule
+# pointing at the zone's hello.txt test object, added/removed via the Bunny
+# API - not committed): OriginUrl to another pull zone's b-cdn.net host does
+# append the original request path when the override URL is bare (the
+# data_route rule below relies on exactly that), but when the override URL
+# already names a file - as here, .../index.html - Bunny fetches that file
+# as-is and does NOT append the request path. So this OriginUrl serves
+# index.html's actual content at 200 for any non-excluded 404, confirmed for
+# "/", "/12", "/12/47.3", "/12/47.3/8.5", "/some/deep/nonexistent/path", and
+# "/assets/does-not-exist.js".
+locals {
+  spa_sites = { for host, cfg in local.sites : host => cfg if cfg.kind == "spa" }
+}
+
+resource "bunnynet_pullzone_edgerule" "spa_fallback" {
+  for_each = local.spa_sites
+
+  enabled     = true
+  pullzone    = bunnynet_pullzone.site[each.key].id
+  description = "History-API fallback: 404 (outside /data/*) -> index.html"
+
+  actions = [
+    {
+      type       = "OriginUrl"
+      parameter1 = "https://${local.pullzone_names[each.key]}.b-cdn.net/index.html"
+      parameter2 = null
+      parameter3 = null
+    }
+  ]
+
+  # 404 AND not under /data/*
+  match_type = "MatchAll"
+  triggers = [
+    {
+      type       = "StatusCode"
+      match_type = "MatchAny"
+      patterns   = ["404"]
+      parameter1 = null
+      parameter2 = null
+    },
+    {
+      type       = "Url"
+      match_type = "MatchNone"
+      patterns   = ["*://${each.key}/data/*"]
+      parameter1 = null
+      parameter2 = null
+    },
+  ]
+}
 
 # A bare pull zone (b-cdn.net only, no custom hostname) fronting the project's
 # data storage zone. It exists purely as the target of the /data/* edge rule
