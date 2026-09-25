@@ -98,14 +98,13 @@ resource "bunnynet_dns_record" "dkim" {
 }
 
 # kube-shim control-plane (issue #36), on UpCloud (zone de-fra1, server uuid
-# 003a02c7-6efb-4828-9227-97d6ac728964). Must resolve ahead of the shim's
-# planned ACME/HTTP-01 integration (kube-shim IMPLEMENTATION_PLAN.md Phase 4).
+# 00621c0b-0244-49d5-88c6-8c76fe568aac).
 resource "bunnynet_dns_record" "kube_shim_a" {
   zone = bunnynet_dns_zone.this["brawer.ch"].id
   name = "kube-shim"
 
   type  = "A"
-  value = "94.237.90.144"
+  value = "87.58.155.231"
 }
 
 resource "bunnynet_dns_record" "kube_shim_aaaa" {
@@ -113,5 +112,5 @@ resource "bunnynet_dns_record" "kube_shim_aaaa" {
   name = "kube-shim"
 
   type  = "AAAA"
-  value = "2a04:3542:1000:910:4086:11ff:fec4:17da"
+  value = "2a04:3542:1000:910:4086:11ff:fec4:0b21"
 }
