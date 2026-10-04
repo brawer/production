@@ -89,13 +89,20 @@ A follow-up then bumps it to 30 days ([issue #13](https://github.com/brawer/prod
 **`/data/*`** (the projects' download CDN — see
 [brawer/osmviews#110](https://github.com/brawer/osmviews/issues/110)) has its own
 split, on the site zone so it reaches the client through the `OriginUrl` hop:
-`datapackage.json` is overwritten in place each build, so it gets
-`local.data_manifest_max_age` (**60 s**, `data_manifest` rule); every other
+`datapackage.json` is overwritten in place each build, so the site zone does not
+cache it at all (`data_manifest` rule, `OverrideCacheTime 0`) and browsers get
+`local.data_manifest_max_age` (**60 s**); every other
 `/data/` object is immutable by its dated URL (`osmviews-<date>.tiff`,
 `*.pmtiles`, `*.parquet`, `*.cdx.json`, …) and gets `local.immutable_max_age`
 (`data_immutable` rule, a negative match so new file types need no change). The
-inner `…-data` pull zone is also pinned to 60 s so an overwritten manifest can't
-sit stale in that tier.
+inner `…-data` pull zone caches everything for 60 s and, unlike the site zones,
+serves stale only while the origin is unreachable, not while revalidating.
+
+The manifest is kept out of the site zone's cache because stale-while-revalidate
+is a per-zone setting and does not respect the TTL: the first request after an
+idle spell gets the old copy, however old. For a file that is polled rarely and
+exists to announce a new build, that meant clients kept seeing the previous one
+([issue #43](https://github.com/brawer/production/issues/43)).
 
 `spa` sites will also need a `404 → /index.html` history-fallback edge rule once
 a frontend actually exists (`TODO` in `cdn.tf`). The Hugo build side is

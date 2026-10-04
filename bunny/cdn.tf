@@ -87,7 +87,9 @@ locals {
   # TTL for the one mutable object under /data/: datapackage.json, which the
   # builder overwrites in place each run and clients poll to detect a new build.
   # Short so a new build shows up fast without an edge purge (Toolforge has no
-  # Bunny account key); clients also re-fetch it on a hash mismatch.
+  # Bunny account key); clients also re-fetch it on a hash mismatch. Applies to
+  # browsers and to the inner data zone; the site zone doesn't cache the
+  # manifest at all (data_manifest rule, issue #43).
   data_manifest_max_age = 60
 
   # Content-hashed asset URL globs per site kind. Files matching these carry a
@@ -152,7 +154,11 @@ resource "bunnynet_pullzone" "site" {
   # within minutes with no purge (we keep the account API key out of CI on
   # purpose). Content-hashed assets get a longer TTL from immutable_assets below.
   # cache_stale serves the old copy instantly while the edge revalidates in the
-  # background, and while the origin is unreachable.
+  # background, and while the origin is unreachable. "updating" means the TTL
+  # does not bound staleness: the first request after an idle spell gets the
+  # old copy however old it is. Fine for HTML, wrong for /data/datapackage.json
+  # - cache_stale is zone-wide, so the data_manifest rule below keeps that one
+  # object out of this zone's cache instead (issue #43).
   cache_expiration_time         = 300
   cache_expiration_time_browser = 300
   cache_stale                   = ["updating", "offline"]
@@ -350,9 +356,15 @@ resource "bunnynet_pullzone" "data" {
   # already expired its own copy. Dated files also get this TTL here, which is
   # harmless: the site-zone data_immutable rule caches them long, so this tier is
   # asked for them rarely and revalidates cheaply against the storage ETag.
+  #
+  # No "updating" in cache_stale: with it, the first request after the TTL ran
+  # out got the previous manifest however long ago it was cached, so a rarely
+  # polled datapackage.json kept announcing the old build (issue #43). An
+  # expired copy is now revalidated before it is served; "offline" still covers
+  # an unreachable storage origin.
   cache_expiration_time         = local.data_manifest_max_age
   cache_expiration_time_browser = local.data_manifest_max_age
-  cache_stale                   = ["updating", "offline"]
+  cache_stale                   = ["offline"]
 
   # See the site zone's cache_chunked above (issue #38) - this inner zone is
   # the one that actually talks to the storage origin, so it also needs cache
@@ -444,17 +456,24 @@ resource "bunnynet_pullzone_edgerule" "data_immutable" {
   ]
 }
 
+# The manifest is not cached on the site zone at all (OverrideCacheTime 0):
+# that zone's cache_stale "updating" would otherwise hand out an arbitrarily old
+# copy to the first request after an idle spell, and Bunny has no per-path
+# switch for it (issue #43). Every manifest request is passed to the inner data
+# zone, which caches it for data_manifest_max_age without stale-while-updating.
+# The file is ~2 KB, so the extra hop costs nothing. Browsers still get
+# max-age=data_manifest_max_age.
 resource "bunnynet_pullzone_edgerule" "data_manifest" {
   for_each = local.data_sites
 
   enabled     = true
   pullzone    = bunnynet_pullzone.site[each.key].id
-  description = "Short cache for the overwritten-in-place /data/datapackage.json"
+  description = "No edge cache for the overwritten-in-place /data/datapackage.json"
 
   actions = [
     {
       type       = "OverrideCacheTime"
-      parameter1 = tostring(local.data_manifest_max_age)
+      parameter1 = "0"
       parameter2 = null
       parameter3 = null
     },
