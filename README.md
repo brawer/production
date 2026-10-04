@@ -68,10 +68,20 @@ pull zone's `b-cdn.net` host, which Bunny fetches with the path appended
 ### Caching
 
 Storage origins send no `Cache-Control`, so each site pull zone pins an explicit
-**300 s** edge + browser TTL (with stale-while-revalidate). A deploy is then
+**300 s** edge + browser TTL. A deploy is then
 visible within minutes without a cache purge — which is deliberate: the deploy
 pipelines are never given the Bunny account API key (it can't be scoped), and it
 is the only credential that can purge.
+
+The `spa` sites also serve an expired copy while the edge revalidates in the
+background (`cache_stale` `"updating"`). That is instant, but it means the TTL
+does not bound staleness: the first request after an idle spell gets the old copy,
+however old. The `hugo` site does without it, so 300 s is a real bound there. Its
+deploy deletes replaced hashed assets after a 72 h grace period
+(`BUNNY_ORPHAN_GRACE_HOURS` in `brawer/homepage`), which is only safe if no older
+HTML is still being served
+([issue #19](https://github.com/brawer/production/issues/19)). Keep that grace
+period well above the HTML TTL.
 
 Content-hashed assets get a longer TTL (`local.immutable_max_age`) via a per-site
 `immutable_assets` edge rule. The URL globs it matches depend on the site's

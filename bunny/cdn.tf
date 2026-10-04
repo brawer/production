@@ -162,15 +162,23 @@ resource "bunnynet_pullzone" "site" {
   # the edge TTL is undefined. Pin a short default: a deploy is then visible
   # within minutes with no purge (we keep the account API key out of CI on
   # purpose). Content-hashed assets get a longer TTL from immutable_assets below.
-  # cache_stale serves the old copy instantly while the edge revalidates in the
-  # background, and while the origin is unreachable. "updating" means the TTL
-  # does not bound staleness: the first request after an idle spell gets the
-  # old copy however old it is. Fine for HTML, wrong for /data/datapackage.json
-  # - cache_stale is zone-wide, so the data_manifest rule below keeps that one
-  # object out of this zone's cache instead (issue #43).
+  #
+  # cache_stale: "offline" serves the cached copy while the origin is
+  # unreachable. "updating" also serves it while the edge revalidates in the
+  # background - instant, but then the TTL does not bound staleness: the first
+  # request after an idle spell gets the old copy however old it is (issue #43).
+  #   - hugo: no "updating". brawer/homepage's deploy deletes a replaced hashed
+  #     asset once it has been orphaned for BUNNY_ORPHAN_GRACE_HOURS (72 h),
+  #     which is only safe if no HTML older than that is still handed out. With
+  #     "updating", an edge location nobody visited for a week would serve
+  #     week-old HTML pointing at a stylesheet that is already gone (issue #19).
+  #   - spa: keeps "updating". brawer/osmviews-app's deploy never deletes old
+  #     assets, so old HTML still finds what it references. The one object that
+  #     must not be stale there, /data/datapackage.json, is kept out of this
+  #     zone's cache by the data_manifest rule below.
   cache_expiration_time         = 300
   cache_expiration_time_browser = 300
-  cache_stale                   = ["updating", "offline"]
+  cache_stale                   = each.value.kind == "hugo" ? ["offline"] : ["updating", "offline"]
   strip_cookies                 = true
 
   # Cache slicing ("Optimize for large object delivery" in the dashboard,
