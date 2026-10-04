@@ -82,9 +82,12 @@ Content-hashed assets get a longer TTL (`local.immutable_max_age`) via a per-sit
 | `hugo` | `*.min.*.css`, `*.min.*.js`, `*_hu*` images, `/fonts/*` |
 | `spa` | `/assets/*` |
 
-`immutable_max_age` starts at **600 s** — deliberately short until a real deploy
-has proven the globs match only hashed files and the build actually fingerprints.
-A follow-up then bumps it to 30 days ([issue #13](https://github.com/brawer/production/issues/13)).
+`immutable_max_age` is **30 days**, without an `immutable` token: a hashed URL
+never changes content, and a bounded TTL lets any surprise (a bad glob, a
+fingerprinting slip) heal itself within a month without a purge. It relies on the
+deploy scripts uploading assets before HTML, and on `/fonts/*` files being
+renamed when they change, since those are matched but not hashed
+([issue #13](https://github.com/brawer/production/issues/13)).
 
 **`/data/*`** (the projects' download CDN — see
 [brawer/osmviews#110](https://github.com/brawer/osmviews/issues/110)) has its own
@@ -93,8 +96,11 @@ split, on the site zone so it reaches the client through the `OriginUrl` hop:
 cache it at all (`data_manifest` rule, `OverrideCacheTime 0`) and browsers get
 `local.data_manifest_max_age` (**60 s**); every other
 `/data/` object is immutable by its dated URL (`osmviews-<date>.tiff`,
-`*.pmtiles`, `*.parquet`, `*.cdx.json`, …) and gets `local.immutable_max_age`
-(`data_immutable` rule, a negative match so new file types need no change). The
+`*.pmtiles`, `*.parquet`, `*.cdx.json`, …) and gets
+`local.data_immutable_max_age` (**600 s**, `data_immutable` rule, a negative
+match so new file types need no change). That TTL stays short because Bunny
+edge-caches a 404 for as long as the rule says, and a dated URL can be requested
+before the builder has published it. The
 inner `…-data` pull zone caches everything for 60 s and, unlike the site zones,
 serves stale only while the origin is unreachable, not while revalidating.
 
