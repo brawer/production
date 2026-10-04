@@ -73,16 +73,25 @@ locals {
     }
   }
 
-  # Edge + browser TTL (seconds) for immutable-by-URL assets: content-hashed
-  # build output (immutable_assets, below) and the projects' dated data files
-  # (data_immutable, below - osmviews-<date>.tiff, *.pmtiles, *.cdx.json, ...).
-  # Kept short until a real deploy has proven the hashed-asset globs match only
-  # hashed files and the build actually fingerprints - a wrong glob at a long
-  # TTL is only recoverable with a purge. Bump to 2592000 (30 days, no
-  # `immutable` token) once that holds and the deploy script uploads assets
-  # before HTML - see issue #13. (The dated data files are immutable by
-  # construction and don't share that risk, but one knob is simpler.)
-  immutable_max_age = 600
+  # Edge + browser TTL (seconds) for content-hashed build output
+  # (immutable_assets, below). 30 days, deliberately without an `immutable`
+  # token and not a year: a hashed URL never changes content, so the only cost
+  # is one conditional GET per asset per month per browser, while any surprise
+  # (a bad glob, a fingerprinting misconfig) heals itself within a month with no
+  # purge. Raised from 600 once the preconditions in issue #13 held: both
+  # deploy scripts upload assets before HTML, and the globs were checked
+  # against live responses. /fonts/* is matched but not hashed - a changed font
+  # needs a new file name (brawer/homepage's rename-on-change convention).
+  immutable_max_age = 2592000
+
+  # Edge + browser TTL for the projects' dated data files (data_immutable,
+  # below - osmviews-<date>.tiff, *.pmtiles, *.cdx.json, ...). Immutable by
+  # construction, but kept short on purpose: OverrideCacheTime makes Bunny
+  # edge-cache a 404 for the full TTL too, and a dated URL is predictable where
+  # a content hash is not. At a long TTL, one request for next week's file
+  # before the builder has published it would keep that file a 404 at that
+  # edge location long after it exists (issue #13).
+  data_immutable_max_age = 600
 
   # TTL for the one mutable object under /data/: datapackage.json, which the
   # builder overwrites in place each run and clients poll to detect a new build.
@@ -234,7 +243,7 @@ resource "bunnynet_pullzone_edgerule" "canonical_redirect" {
 # changes whenever their bytes change (the build puts a hash in the filename), so
 # old and new copies coexist in the storage zone and the deploy pipeline never
 # needs to purge (nor be handed the un-scopeable account API key). TTL is
-# local.immutable_max_age - kept short until proven, see the comment there.
+# local.immutable_max_age, see the comment there.
 #
 # OverrideCacheTime sets the edge TTL; SetResponseHeader sets what the browser
 # sees. The match globs are per-site-kind (local.immutable_globs) and have to
@@ -424,14 +433,14 @@ resource "bunnynet_pullzone_edgerule" "data_immutable" {
   actions = [
     {
       type       = "OverrideCacheTime"
-      parameter1 = tostring(local.immutable_max_age)
+      parameter1 = tostring(local.data_immutable_max_age)
       parameter2 = null
       parameter3 = null
     },
     {
       type       = "SetResponseHeader"
       parameter1 = "Cache-Control"
-      parameter2 = "public, max-age=${local.immutable_max_age}"
+      parameter2 = "public, max-age=${local.data_immutable_max_age}"
       parameter3 = null
     },
   ]
