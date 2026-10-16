@@ -451,6 +451,130 @@ on any bucket-scoped request (bare `s3cmd ls` with no bucket worked either
 way) - a known rough edge for `s3cmd` against non-AWS S3-compatible
 backends. Then `s3cmd -c ~/.s3cfg-infomaniak ls s3://osmdiffs-internal`.
 
+## kube-shim
+
+One OpenTofu root module (`kube-shim/`), provisioning the
+[kube-shim](https://github.com/brawer/kube-shim) control-plane instance via
+its own reusable module
+(`github.com/brawer/kube-shim//tofu/upcloud`). Originally added by hand
+(issue #36); this replaces that hand-provisioned instance with real
+infrastructure-as-code. The old instance's credentials (both
+`server.api_tokens` bearer tokens and its `[upcloud]` runtime token) are
+being treated as compromised and are **not** reused anywhere here — this
+module mints entirely fresh ones, tracked as real OpenTofu state instead of
+hand-edited file contents over SSH.
+
+| | |
+|---|---|
+| **Provider** | UpCloud (`de-fra1`) |
+| **IaC** | OpenTofu, via `github.com/brawer/kube-shim//tofu/upcloud`, pinned to a release tag (`?ref=v0.2.8`) — bump it deliberately; any change that touches `user_data` replaces the server |
+| **State** | Local (`kube-shim/terraform.tfstate`, gitignored) — contains the minted bearer tokens and the worker SSH private key in plain text; see Notes |
+| **Cost** | ~€5/month for the host itself (UpCloud's published price for the smallest real plan, `1xCPU-1GB`/25GB MaxIOPS — not independently re-verified against a real invoice yet); worker VMs billed per-job while running, on top |
+
+### Bringing kube-shim back up
+
+The previous hand-provisioned instance's `kube-shim.service` has already been
+stopped (2026-10-15) — its credentials were compromised. These are the exact
+steps to stand up a fresh instance via this module and cut DNS over to it:
+
+1. **Create the required secrets** (none of these exist yet):
+   - `secrets/kube_shim_upcloud_username` / `secrets/kube_shim_upcloud_password`
+     — account-level UpCloud credentials (or, better, a sub-account scoped to
+     server/firewall management only) that create the host itself.
+   - `secrets/kube_shim_upcloud_runtime_token` — a **different**, dedicated
+     UpCloud sub-account token (control panel: Account → Users, scoped to
+     API access only) that kube-shim itself uses at runtime to provision
+     worker VMs. Never the same value as the username/password above — see
+     `kube-shim/main.tf`'s own comment for why.
+
+   ```sh
+   printf %s 'your-username' > secrets/kube_shim_upcloud_username
+   printf %s 'your-password' > secrets/kube_shim_upcloud_password
+   printf %s 'sub-account-api-token' > secrets/kube_shim_upcloud_runtime_token
+   ```
+
+2. **Apply.**
+   ```sh
+   cd kube-shim
+   tofu init
+   tofu apply
+   ```
+   This creates a brand-new host with a fresh IPv4/IPv6 address, firewalled
+   to just 22/443/80, running kube-shim with `acme_directory = "production"`
+   (see `kube-shim.tf`). Until DNS points at the new host (step 3), the
+   first certificate request can't succeed: kube-shim gives up after 5
+   minutes, exits, and systemd restarts it 10 s later (`Restart=on-failure`
+   in `deploy/kube-shim.container`). It just keeps retrying until DNS is
+   right, so there's no staging-first step.
+
+   Don't change any module input later without expecting a **new server**.
+   Every input ends up in the server's `user_data`, and the UpCloud
+   provider marks `user_data` as `RequiresReplace`. So any change (including
+   `acme_directory` or `api_token_count`) destroys and recreates the host,
+   most likely with new IP addresses. After such an apply, repeat step 3.
+
+3. **Cut DNS over.**
+   ```sh
+   tofu output public_ipv4
+   tofu output public_ipv6
+   ```
+   Put these into `bunny/dns.tf`'s `kube_shim_a`/`kube_shim_aaaa` records
+   (replacing the old instance's IPs — that file has its own TODO marking
+   exactly where), then:
+   ```sh
+   cd ../bunny
+   tofu apply
+   ```
+   Do this right after step 2. Every failed attempt while DNS still points
+   at the old IP counts against Let's Encrypt's failed-validation limit (5
+   per hostname per hour). If you're slow, issuance may stall for up to an
+   hour, but it recovers on its own.
+
+4. **Wait for the certificate.** Once DNS resolves (`dig kube-shim.brawer.ch
+   A AAAA` against a public resolver, not your own machine's cache), the
+   next retry should get a certificate. Confirm with
+   `curl -D - https://kube-shim.brawer.ch/livez`, *without* `-k`, so curl
+   fails unless the certificate is CA-trusted. If it doesn't succeed,
+   check `journalctl -u kube-shim.service` on the host.
+
+5. **Save the bearer token.**
+   ```sh
+   tofu output -json api_tokens
+   ```
+   `api_tokens[0]` is the only time this value is ever shown in the clear by
+   this tooling — save it somewhere durable (a password manager, not
+   another file in this repo) for your own `kubectl`/`kubernetes_provider`
+   client config against the instance.
+
+6. **Decommission the old instance.** Once the new one is confirmed healthy
+   (`curl https://kube-shim.brawer.ch/healthz` — no token needed, Phase
+   15 in the kube-shim repo), delete the old UpCloud server (uuid
+   `00621c0b-0244-49d5-88c6-8c76fe568aac`, see `bunny/dns.tf`'s own
+   comment) via the UpCloud control panel or API. This module never
+   touches it — it was never under this repo's management in the first
+   place.
+
+### Scheduling real CronJobs against it
+
+Not built in this PR — once the instance above is confirmed healthy, point a
+`hashicorp/kubernetes` `kubernetes_provider` at it using `tofu output -raw
+public_ipv4` (or the hostname, once DNS resolves) and `api_tokens[0]` as the
+bearer token, the same way kube-shim's own
+[`docs/IMPLEMENTATION_PLAN.md`](https://github.com/brawer/kube-shim/blob/main/docs/IMPLEMENTATION_PLAN.md)
+testing sections do by hand with `curl`/`kubectl`. The real `osmdiffs`
+`CronJob` definition is a separate follow-up.
+
+### Notes
+
+- Local state contains the minted bearer tokens, the worker SSH private
+  key, and whatever credentials `main.tf`'s provider block uses, all in
+  plain text — same caveat as every other module here (see top-level
+  Notes), worth repeating given how sensitive this one specifically is.
+- `github.com/brawer/kube-shim//tofu/upcloud`'s own README has a "Verified
+  vs. not" section — the one genuinely unverified step there (starting
+  `kube-shim.service` non-interactively via `machinectl shell` on first
+  boot) is the first thing to check if step 2 above ever seems to hang.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

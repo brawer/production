@@ -97,8 +97,18 @@ resource "bunnynet_dns_record" "dkim" {
   value = each.value.value
 }
 
-# kube-shim control-plane (issue #36), on UpCloud (zone de-fra1, server uuid
-# 00621c0b-0244-49d5-88c6-8c76fe568aac).
+# kube-shim control-plane (issue #36 originally). The values below still
+# point at the hand-provisioned instance (server uuid
+# 00621c0b-0244-49d5-88c6-8c76fe568aac) that ../kube-shim/ is replacing --
+# that instance's own kube-shim.service has already been stopped (its
+# credentials are being treated as compromised), but its DNS is left
+# untouched here for now so this PR's own `tofu apply` doesn't change
+# anything live by itself.
+#
+# TODO once ../kube-shim/ has been applied: update both `value`s below to
+# `tofu output public_ipv4`/`public_ipv6` from that module, then
+# `tofu apply` here too. See the "## kube-shim" runbook in the top-level
+# README.md for the full sequence (this DNS update is step 3, not the first).
 resource "bunnynet_dns_record" "kube_shim_a" {
   zone = bunnynet_dns_zone.this["brawer.ch"].id
   name = "kube-shim"

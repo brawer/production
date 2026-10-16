@@ -32,13 +32,16 @@ jobs:
           echo "ci-placeholder" > secrets/bunny_api_key
           echo "ci-placeholder" > secrets/infomaniak_api_token
           echo "ci-placeholder" > secrets/infomaniak_openstack_password
+          echo "ci-placeholder" > secrets/kube_shim_upcloud_username
+          echo "ci-placeholder" > secrets/kube_shim_upcloud_password
+          echo "ci-placeholder" > secrets/kube_shim_upcloud_runtime_token
 
       # Retry: OpenTofu re-fetches provider signatures from GitHub's release
       # CDN on every init (even with a pinned lock file), which intermittently
       # returns 504.
       - name: Init and validate
         run: |
-          for dir in bunny infomaniak infomaniak-k8s infomaniak-s3-auth infomaniak-storage; do
+          for dir in bunny infomaniak infomaniak-k8s infomaniak-s3-auth infomaniak-storage kube-shim; do
             for attempt in 1 2 3 4 5; do
               tofu -chdir="$dir" init -backend=false && break
               echo "::warning::tofu init ($dir) attempt $attempt failed; retrying in 20s"
