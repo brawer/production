@@ -467,7 +467,7 @@ hand-edited file contents over SSH.
 | | |
 |---|---|
 | **Provider** | UpCloud (`de-fra1`) |
-| **IaC** | OpenTofu, via `github.com/brawer/kube-shim//tofu/upcloud` |
+| **IaC** | OpenTofu, via `github.com/brawer/kube-shim//tofu/upcloud`, pinned to a release tag (`?ref=v0.2.8`) — bump it deliberately; any change that touches `user_data` replaces the server |
 | **State** | Local (`kube-shim/terraform.tfstate`, gitignored) — contains the minted bearer tokens and the worker SSH private key in plain text; see Notes |
 | **Cost** | ~€5/month for the host itself (UpCloud's published price for the smallest real plan, `1xCPU-1GB`/25GB MaxIOPS — not independently re-verified against a real invoice yet); worker VMs billed per-job while running, on top |
 
@@ -500,9 +500,18 @@ steps to stand up a fresh instance via this module and cut DNS over to it:
    tofu apply
    ```
    This creates a brand-new host with a fresh IPv4/IPv6 address, firewalled
-   to just 22/443/80, running kube-shim with `acme_directory = "staging"`
-   (see `kube-shim.tf`) — so this first apply succeeds before DNS even
-   points at it yet.
+   to just 22/443/80, running kube-shim with `acme_directory = "production"`
+   (see `kube-shim.tf`). Until DNS points at the new host (step 3), the
+   first certificate request can't succeed: kube-shim gives up after 5
+   minutes, exits, and systemd restarts it 10 s later (`Restart=on-failure`
+   in `deploy/kube-shim.container`). It just keeps retrying until DNS is
+   right, so there's no staging-first step.
+
+   Don't change any module input later without expecting a **new server**.
+   Every input ends up in the server's `user_data`, and the UpCloud
+   provider marks `user_data` as `RequiresReplace`. So any change (including
+   `acme_directory` or `api_token_count`) destroys and recreates the host,
+   most likely with new IP addresses. After such an apply, repeat step 3.
 
 3. **Cut DNS over.**
    ```sh
@@ -516,19 +525,17 @@ steps to stand up a fresh instance via this module and cut DNS over to it:
    cd ../bunny
    tofu apply
    ```
+   Do this right after step 2. Every failed attempt while DNS still points
+   at the old IP counts against Let's Encrypt's failed-validation limit (5
+   per hostname per hour). If you're slow, issuance may stall for up to an
+   hour, but it recovers on its own.
 
-4. **Flip to a real certificate.** Once DNS resolves (`dig kube-shim.brawer.ch
-   A AAAA` against a public resolver, not your own machine's cache — don't
-   trust a cached answer), set `kube-shim.tf`'s module block to
-   `acme_directory = "production"` and `tofu apply` again in `kube-shim/`.
-   This updates `user_data` in place rather than replacing the server, but
-   whether that alone is enough for the new config to take effect, or
-   whether the host needs an explicit reboot, is **unverified** — see
-   `tofu/upcloud/README.md`'s own "Rotating credentials" section in the
-   kube-shim repo for the same caveat. Confirm via
-   `curl -k -D - https://kube-shim.brawer.ch/livez` (check for a
-   CA-trusted cert, not just a `200`), and reboot the host by hand if the
-   old self-signed one is still being served.
+4. **Wait for the certificate.** Once DNS resolves (`dig kube-shim.brawer.ch
+   A AAAA` against a public resolver, not your own machine's cache), the
+   next retry should get a certificate. Confirm with
+   `curl -D - https://kube-shim.brawer.ch/livez`, *without* `-k`, so curl
+   fails unless the certificate is CA-trusted. If it doesn't succeed,
+   check `journalctl -u kube-shim.service` on the host.
 
 5. **Save the bearer token.**
    ```sh
@@ -540,7 +547,7 @@ steps to stand up a fresh instance via this module and cut DNS over to it:
    client config against the instance.
 
 6. **Decommission the old instance.** Once the new one is confirmed healthy
-   (`curl -k https://kube-shim.brawer.ch/healthz` — no token needed, Phase
+   (`curl https://kube-shim.brawer.ch/healthz` — no token needed, Phase
    15 in the kube-shim repo), delete the old UpCloud server (uuid
    `00621c0b-0244-49d5-88c6-8c76fe568aac`, see `bunny/dns.tf`'s own
    comment) via the UpCloud control panel or API. This module never

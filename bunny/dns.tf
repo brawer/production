@@ -107,8 +107,8 @@ resource "bunnynet_dns_record" "dkim" {
 #
 # TODO once ../kube-shim/ has been applied: update both `value`s below to
 # `tofu output public_ipv4`/`public_ipv6` from that module, then
-# `tofu apply` here too. See ../kube-shim/README.md's own runbook for the
-# full sequence (this DNS update is one step within it, not the first).
+# `tofu apply` here too. See the "## kube-shim" runbook in the top-level
+# README.md for the full sequence (this DNS update is step 3, not the first).
 resource "bunnynet_dns_record" "kube_shim_a" {
   zone = bunnynet_dns_zone.this["brawer.ch"].id
   name = "kube-shim"

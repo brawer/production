@@ -9,7 +9,11 @@
 # [upcloud] runtime token) are being treated as compromised and are not
 # reused anywhere here -- this module mints entirely fresh ones.
 module "kube_shim" {
-  source = "github.com/brawer/kube-shim//tofu/upcloud"
+  # Pinned to a release tag, not main: this module mints credentials and
+  # decides what runs on the host, so an upstream merge shouldn't reach a
+  # later `tofu init`/`apply` unnoticed. Bump deliberately; most upstream
+  # changes alter user_data, which replaces the server (see README.md).
+  source = "github.com/brawer/kube-shim//tofu/upcloud?ref=v0.2.8"
 
   hostname = "kube-shim.brawer.ch"
 
@@ -34,8 +38,11 @@ module "kube_shim" {
   main_currency     = "EUR"
   budget_daily_rate = 0
 
-  # acme_directory defaults to "staging" in the module -- see this
-  # directory's own README for the two-step apply (staging first, point
-  # DNS, then flip to "production" and apply again) before relying on a
-  # publicly-trusted certificate.
+  # "production" from the very first apply, not the module's "staging"
+  # default: user_data is RequiresReplace in the UpCloud provider, so
+  # flipping this later would destroy and recreate the host (new IPs, DNS
+  # broken again). Until DNS points here, kube-shim's cold-start ACME
+  # timeout + systemd's Restart=on-failure just keep retrying. See the
+  # "## kube-shim" runbook in the top-level README.md.
+  acme_directory = "production"
 }
