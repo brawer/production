@@ -25,10 +25,11 @@ module "kube_shim" {
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBjHt2bDhd0+UH0XYtsUb1UrTiuucn295RdNEl9dXV6c kube-shim.brawer.ch deploy key"
   ]
 
-  # A dedicated UpCloud sub-account token, scoped to API access only -- NOT
-  # the same account-level username/password main.tf's provider block
-  # authenticates with. See the module's own variables.tf for why
-  # (UpCloud's OpenTofu provider has no resource to mint this for us).
+  # A dedicated UpCloud sub-account token (brawer-kubeshim, see README.md)
+  # -- NOT the main-account token main.tf's provider block authenticates
+  # with, since this one gets stored on the host. UpCloud's OpenTofu
+  # provider has no resource to mint this for us (see the module's own
+  # variables.tf).
   upcloud_runtime_token = trimspace(file("${path.module}/../secrets/kube_shim_upcloud_runtime_token"))
 
   # Matches the previous instance's real, live settings at the time it was

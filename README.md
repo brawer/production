@@ -478,18 +478,28 @@ stopped (2026-10-15) — its credentials were compromised. These are the exact
 steps to stand up a fresh instance via this module and cut DNS over to it:
 
 1. **Create the required secrets** (none of these exist yet):
-   - `secrets/kube_shim_upcloud_username` / `secrets/kube_shim_upcloud_password`
-     — account-level UpCloud credentials (or, better, a sub-account scoped to
-     server/firewall management only) that create the host itself.
-   - `secrets/kube_shim_upcloud_runtime_token` — a **different**, dedicated
-     UpCloud sub-account token (control panel: Account → Users, scoped to
-     API access only) that kube-shim itself uses at runtime to provision
-     worker VMs. Never the same value as the username/password above — see
-     `kube-shim/main.tf`'s own comment for why.
+   - `secrets/kube_shim_upcloud_tofu_token` — an API token from your own
+     main UpCloud account (**Account → API tokens**). Only OpenTofu uses
+     it, on your machine, to create the host itself; it never reaches the
+     server.
+   - `secrets/kube_shim_upcloud_runtime_token` — a **different** token,
+     created by a dedicated sub-account (`brawer-kubeshim`), that
+     kube-shim itself uses at runtime to provision worker VMs. This one is
+     stored on the server, so it must not carry your main account's
+     permissions:
+     1. **People** → add user `brawer-kubeshim`, with a random password (keep
+        it in a password manager), no access to existing servers or storage,
+        and **Allow access to Control Panel** temporarily on.
+     2. Log in as that user (private window) → **Account → API tokens** →
+        new token, with **Allow token to create tokens** off. Tokens expire
+        after at most 365 days, so note the expiry date.
+     3. Back as your main account, **People → Permissions → Edit
+        permissions**: turn off both Control Panel access and Basic Auth API
+        connections. The token keeps working (Basic Auth settings don't
+        apply to API tokens), but the password can't log in anywhere.
 
    ```sh
-   printf %s 'your-username' > secrets/kube_shim_upcloud_username
-   printf %s 'your-password' > secrets/kube_shim_upcloud_password
+   printf %s 'main-account-api-token' > secrets/kube_shim_upcloud_tofu_token
    printf %s 'sub-account-api-token' > secrets/kube_shim_upcloud_runtime_token
    ```
 
