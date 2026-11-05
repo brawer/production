@@ -483,11 +483,11 @@ steps to stand up a fresh instance via this module and cut DNS over to it:
      it, on your machine, to create the host itself; it never reaches the
      server.
    - `secrets/kube_shim_upcloud_runtime_token` — a **different** token,
-     created by a dedicated sub-account (`brawer-kubeshim`), that
+     created by a dedicated sub-account (`brawer_kubeshim`), that
      kube-shim itself uses at runtime to provision worker VMs. This one is
      stored on the server, so it must not carry your main account's
      permissions:
-     1. **People** → add user `brawer-kubeshim`, with a random password (keep
+     1. **People** → add user `brawer_kubeshim`, with a random password (keep
         it in a password manager), no access to existing servers or storage,
         and **Allow access to Control Panel** temporarily on.
      2. Log in as that user (private window) → **Account → API tokens** →

@@ -25,7 +25,7 @@ module "kube_shim" {
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBjHt2bDhd0+UH0XYtsUb1UrTiuucn295RdNEl9dXV6c kube-shim.brawer.ch deploy key"
   ]
 
-  # A dedicated UpCloud sub-account token (brawer-kubeshim, see README.md)
+  # A dedicated UpCloud sub-account token (brawer_kubeshim, see README.md)
   # -- NOT the main-account token main.tf's provider block authenticates
   # with, since this one gets stored on the host. UpCloud's OpenTofu
   # provider has no resource to mint this for us (see the module's own
