@@ -97,24 +97,17 @@ resource "bunnynet_dns_record" "dkim" {
   value = each.value.value
 }
 
-# kube-shim control-plane (issue #36 originally). The values below still
-# point at the hand-provisioned instance (server uuid
-# 00621c0b-0244-49d5-88c6-8c76fe568aac) that ../kube-shim/ is replacing --
-# that instance's own kube-shim.service has already been stopped (its
-# credentials are being treated as compromised), but its DNS is left
-# untouched here for now so this PR's own `tofu apply` doesn't change
-# anything live by itself.
-#
-# TODO once ../kube-shim/ has been applied: update both `value`s below to
-# `tofu output public_ipv4`/`public_ipv6` from that module, then
-# `tofu apply` here too. See the "## kube-shim" runbook in the top-level
-# README.md for the full sequence (this DNS update is step 3, not the first).
+# kube-shim control-plane (issue #36 originally), provisioned by
+# ../kube-shim/ (server uuid 0007c668-2f98-4b97-8f5b-e0faeaa5659e). Values
+# are that module's `tofu output public_ipv4`/`public_ipv6`; any change to
+# its inputs replaces the server, most likely with new IPs, so update these
+# again after such an apply (see the "## kube-shim" runbook in README.md).
 resource "bunnynet_dns_record" "kube_shim_a" {
   zone = bunnynet_dns_zone.this["brawer.ch"].id
   name = "kube-shim"
 
   type  = "A"
-  value = "87.58.155.231"
+  value = "80.47.228.201"
 }
 
 resource "bunnynet_dns_record" "kube_shim_aaaa" {
@@ -122,5 +115,5 @@ resource "bunnynet_dns_record" "kube_shim_aaaa" {
   name = "kube-shim"
 
   type  = "AAAA"
-  value = "2a04:3542:1000:910:4086:11ff:fec4:0b21"
+  value = "2a04:3542:1000:910:4086:11ff:fec4:546a"
 }
