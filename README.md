@@ -467,7 +467,7 @@ hand-edited file contents over SSH.
 | | |
 |---|---|
 | **Provider** | UpCloud (`de-fra1`) |
-| **IaC** | OpenTofu, via `github.com/brawer/kube-shim//tofu/upcloud`, pinned to a release tag (`?ref=v0.2.8`) — bump it deliberately; any change that touches `user_data` replaces the server |
+| **IaC** | OpenTofu, via `github.com/brawer/kube-shim//tofu/upcloud`, pinned to a release tag (`?ref=v0.2.9`) — bump it deliberately; any change that touches `user_data` replaces the server |
 | **State** | Local (`kube-shim/terraform.tfstate`, gitignored) — contains the minted bearer tokens and the worker SSH private key in plain text; see Notes |
 | **Cost** | ~€5/month for the host itself (UpCloud's published price for the smallest real plan, `1xCPU-1GB`/25GB MaxIOPS — not independently re-verified against a real invoice yet); worker VMs billed per-job while running, on top |
 

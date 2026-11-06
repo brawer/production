@@ -98,7 +98,7 @@ resource "bunnynet_dns_record" "dkim" {
 }
 
 # kube-shim control-plane (issue #36 originally), provisioned by
-# ../kube-shim/ (server uuid 0007c668-2f98-4b97-8f5b-e0faeaa5659e). Values
+# ../kube-shim/ (server uuid 00c3030f-47d7-4d04-93db-6bac7d238d57). Values
 # are that module's `tofu output public_ipv4`/`public_ipv6`; any change to
 # its inputs replaces the server, most likely with new IPs, so update these
 # again after such an apply (see the "## kube-shim" runbook in README.md).
@@ -107,7 +107,7 @@ resource "bunnynet_dns_record" "kube_shim_a" {
   name = "kube-shim"
 
   type  = "A"
-  value = "80.47.228.201"
+  value = "80.47.228.28"
 }
 
 resource "bunnynet_dns_record" "kube_shim_aaaa" {
@@ -115,5 +115,5 @@ resource "bunnynet_dns_record" "kube_shim_aaaa" {
   name = "kube-shim"
 
   type  = "AAAA"
-  value = "2a04:3542:1000:910:4086:11ff:fec4:546a"
+  value = "2a04:3542:1000:910:4086:11ff:fec4:1985"
 }
