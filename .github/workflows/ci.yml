@@ -40,7 +40,7 @@ jobs:
       # returns 504.
       - name: Init and validate
         run: |
-          for dir in bunny infomaniak infomaniak-k8s infomaniak-s3-auth infomaniak-storage kube-shim; do
+          for dir in bunny infomaniak infomaniak-k8s infomaniak-s3-auth infomaniak-storage kube-shim kube-shim-jobs; do
             for attempt in 1 2 3 4 5; do
               tofu -chdir="$dir" init -backend=false && break
               echo "::warning::tofu init ($dir) attempt $attempt failed; retrying in 20s"
