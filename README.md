@@ -467,7 +467,7 @@ hand-edited file contents over SSH.
 | | |
 |---|---|
 | **Provider** | UpCloud (`de-fra1`) |
-| **IaC** | OpenTofu, via `github.com/brawer/kube-shim//tofu/upcloud`, pinned to a release tag (`?ref=v0.2.9`) — bump it deliberately; any change that touches `user_data` replaces the server |
+| **IaC** | OpenTofu, via `github.com/brawer/kube-shim//tofu/upcloud`, pinned to a release tag (`?ref=v0.3.4`), with the container pinned to the same release (`image_tag`). Bump both together; changes are pushed to the existing host over SSH, keeping the server and its IPs (see [Upgrading kube-shim](#upgrading-kube-shim)) |
 | **State** | Local (`kube-shim/terraform.tfstate`, gitignored) — contains the minted bearer tokens and the worker SSH private key in plain text; see Notes |
 | **Cost** | ~€5/month for the host itself (UpCloud's published price for the smallest real plan, `1xCPU-1GB`/25GB MaxIOPS — not independently re-verified against a real invoice yet); worker VMs billed per-job while running, on top |
 
@@ -517,11 +517,13 @@ steps to stand up a fresh instance via this module and cut DNS over to it:
    in `deploy/kube-shim.container`). It just keeps retrying until DNS is
    right, so there's no staging-first step.
 
-   Don't change any module input later without expecting a **new server**.
-   Every input ends up in the server's `user_data`, and the UpCloud
-   provider marks `user_data` as `RequiresReplace`. So any change (including
-   `acme_directory` or `api_token_count`) destroys and recreates the host,
-   most likely with new IP addresses. After such an apply, repeat step 3.
+   `user_data` only seeds a brand-new host: the module ignores later
+   changes to it (the UpCloud provider would otherwise replace the server).
+   Later input changes, such as `image_tag`, `acme_directory` or
+   `api_token_count`, reach the existing host over SSH instead; see
+   [Upgrading kube-shim](#upgrading-kube-shim). The first apply also does
+   that push once, so load the deploy key into your SSH agent beforehand
+   (see there).
 
 3. **Cut DNS over.**
    ```sh
@@ -564,6 +566,42 @@ steps to stand up a fresh instance via this module and cut DNS over to it:
    touches it — it was never under this repo's management in the first
    place.
 
+### Upgrading kube-shim
+
+The host runs a pinned container release (`image_tag` in `kube-shim.tf`),
+so it never upgrades on its own. To move to a new release:
+
+1. In `kube-shim/kube-shim.tf`, bump both the module `source`'s `?ref=`
+   and `image_tag` to the new tag (e.g. `v0.3.5`).
+2. Load the deploy key into your SSH agent for an hour. The module pushes
+   to the host as `admin` over SSH, and `operator_ssh_private_key` is left
+   null, so it uses the agent:
+   ```sh
+   ssh-add -t 3600 ~/src/kube-shim/secrets/kube-shim-deploy_ed25519
+   ```
+3. Plan, and check the plan:
+   ```sh
+   cd kube-shim
+   tofu init -upgrade
+   tofu plan
+   ```
+   Expect `terraform_data.push_config` to be replaced and nothing else
+   (`upcloud_server.kube_shim` stays in place). **If the plan replaces the
+   server, stop:** that means new IPs and steps 2–4 of
+   [Bringing kube-shim back up](#bringing-kube-shim-back-up) again.
+4. `tofu apply`. On the host, this pulls the new image first (so a bad tag
+   fails the apply while the old version keeps running), installs
+   `config.toml` and the quadlet unit, and restarts `kube-shim.service`
+   once. Better done while no job is running.
+5. Check the `server:` header reports the new version:
+   ```sh
+   curl -sS -D - -o /dev/null https://kube-shim.brawer.ch/livez
+   ```
+
+If the push fails (for example, SSH isn't reachable),
+`terraform_data.push_config` is left tainted and the next `tofu apply`
+retries it. The running service is untouched until the restart.
+
 ### Scheduling real CronJobs against it
 
 Not built in this PR — once the instance above is confirmed healthy, point a
@@ -581,9 +619,11 @@ testing sections do by hand with `curl`/`kubectl`. The real `osmdiffs`
   plain text — same caveat as every other module here (see top-level
   Notes), worth repeating given how sensitive this one specifically is.
 - `github.com/brawer/kube-shim//tofu/upcloud`'s own README has a "Verified
-  vs. not" section — the one genuinely unverified step there (starting
-  `kube-shim.service` non-interactively via `machinectl shell` on first
-  boot) is the first thing to check if step 2 above ever seems to hang.
+  vs. not" section. Starting `kube-shim.service` on first boot failed in
+  v0.2.9 (fixed in v0.3.0, kube-shim#83); the host that was set up with
+  v0.2.9 had it started by hand. If step 2 above ever seems to hang, check
+  `systemctl --user --machine=kube-shim@ status kube-shim.service` on the
+  host first.
 
 ## License
 

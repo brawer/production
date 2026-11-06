@@ -11,9 +11,20 @@
 module "kube_shim" {
   # Pinned to a release tag, not main: this module mints credentials and
   # decides what runs on the host, so an upstream merge shouldn't reach a
-  # later `tofu init`/`apply` unnoticed. Bump deliberately; most upstream
-  # changes alter user_data, which replaces the server (see README.md).
-  source = "github.com/brawer/kube-shim//tofu/upcloud?ref=v0.2.9"
+  # later `tofu init`/`apply` unnoticed. Bump deliberately, together with
+  # image_tag below. Since v0.3.4 the module ignores user_data changes on
+  # an existing host and pushes config.toml and the quadlet unit over SSH
+  # instead, so a bump updates the host in place (see README.md).
+  source = "github.com/brawer/kube-shim//tofu/upcloud?ref=v0.3.4"
+
+  # The kube-shim container release to run. Pinned rather than "latest",
+  # which also drops podman's AutoUpdate=registry: the host changes version
+  # only when this value changes. Keep it in step with `source`.
+  image_tag = "v0.3.4"
+
+  # operator_ssh_private_key is left null, so `tofu apply` pushes over SSH
+  # with whatever key your SSH agent holds; that must be the deploy key
+  # below (see README.md's "Upgrading kube-shim").
 
   hostname = "kube-shim.brawer.ch"
 
@@ -40,10 +51,10 @@ module "kube_shim" {
   budget_daily_rate = 0
 
   # "production" from the very first apply, not the module's "staging"
-  # default: user_data is RequiresReplace in the UpCloud provider, so
-  # flipping this later would destroy and recreate the host (new IPs, DNS
-  # broken again). Until DNS points here, kube-shim's cold-start ACME
-  # timeout + systemd's Restart=on-failure just keep retrying. See the
-  # "## kube-shim" runbook in the top-level README.md.
+  # default, so a fresh host never serves an untrusted certificate. (Since
+  # v0.3.4 changing it later would be pushed in place over SSH rather than
+  # replacing the host.) Until DNS points at a brand-new host, kube-shim's
+  # cold-start ACME timeout + systemd's Restart=on-failure just keep
+  # retrying. See the "## kube-shim" runbook in the top-level README.md.
   acme_directory = "production"
 }
