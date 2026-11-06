@@ -625,6 +625,40 @@ testing sections do by hand with `curl`/`kubectl`. The real `osmdiffs`
   `systemctl --user --machine=kube-shim@ status kube-shim.service` on the
   host first.
 
+## kube-shim jobs
+
+One OpenTofu root module (`kube-shim-jobs/`) holding the Kubernetes objects
+(CronJobs, Secrets) that run on [kube-shim](#kube-shim). Each job runs on
+its own short-lived UpCloud worker VM, billed only while it runs.
+
+| | |
+|---|---|
+| **Talks to** | `https://kube-shim.brawer.ch`, with the bearer token read from `kube-shim/`'s state (`terraform_remote_state`, no secrets file) |
+| **State** | Local (`kube-shim-jobs/terraform.tfstate`, gitignored) — contains the S3 credentials in plain text |
+| **Jobs** | `osmdiffs-weekly`: Sundays 03:00 UTC, 6 CPU / 8 GB, 250 GB MaxIOPS scratch, `ghcr.io/brawer/osmdiffs:latest` |
+
+Needs kube-shim v0.3.1 or later. The host runs v0.3.4; the job depends on
+kube-shim#84 (env values), #85 (worker sizing), #86 (`securityContext`,
+`mountPath`) and #92 (the provider's default-valued fields).
+
+kube-shim doesn't implement `suspend`, so applying schedules the CronJob
+right away; the next Sunday 03:00 UTC run follows on its own. To apply:
+
+```sh
+cd kube-shim-jobs
+tofu init
+tofu apply
+```
+
+Per osmdiffs' [PRODUCTION.md](https://github.com/brawer/osmdiffs/blob/main/docs/PRODUCTION.md),
+do the first production run by hand, and check
+`https://osmdiffs.brawer.ch/data/datapackage.json` before relying on the
+schedule.
+
+The S3 destinations are the same ones the Infomaniak test run used
+(re-checked 2026-11-06): Bunny storage zone `osmdiffs-data-de` (public) and
+Infomaniak bucket `osmdiffs-internal` (logs).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
