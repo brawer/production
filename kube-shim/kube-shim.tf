@@ -13,7 +13,7 @@ module "kube_shim" {
   # decides what runs on the host, so an upstream merge shouldn't reach a
   # later `tofu init`/`apply` unnoticed. Bump deliberately; most upstream
   # changes alter user_data, which replaces the server (see README.md).
-  source = "github.com/brawer/kube-shim//tofu/upcloud?ref=v0.2.8"
+  source = "github.com/brawer/kube-shim//tofu/upcloud?ref=v0.2.9"
 
   hostname = "kube-shim.brawer.ch"
 
