@@ -24,12 +24,12 @@ module "kube_shim" {
   # image_tag below. Since v0.3.4 the module ignores user_data changes on
   # an existing host and pushes config.toml and the quadlet unit over SSH
   # instead, so a bump updates the host in place (see README.md).
-  source = "github.com/brawer/kube-shim//tofu/upcloud?ref=v0.4.0"
+  source = "github.com/brawer/kube-shim//tofu/upcloud?ref=v0.4.1"
 
   # The kube-shim container release to run. Pinned rather than "latest",
   # which also drops podman's AutoUpdate=registry: the host changes version
   # only when this value changes. Keep it in step with `source`.
-  image_tag = "v0.4.0"
+  image_tag = "v0.4.1"
 
   # operator_ssh_private_key is left null, so `tofu apply` pushes over SSH
   # with whatever key your SSH agent holds; that must be the deploy key
