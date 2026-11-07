@@ -467,7 +467,7 @@ hand-edited file contents over SSH.
 | | |
 |---|---|
 | **Provider** | UpCloud (`de-fra1`) |
-| **IaC** | OpenTofu, via `github.com/brawer/kube-shim//tofu/upcloud`, pinned to a release tag (`?ref=v0.3.4`), with the container pinned to the same release (`image_tag`). Bump both together; changes are pushed to the existing host over SSH, keeping the server and its IPs (see [Upgrading kube-shim](#upgrading-kube-shim)) |
+| **IaC** | OpenTofu, via `github.com/brawer/kube-shim//tofu/upcloud`, pinned to a release tag (`?ref=v0.4.0`), with the container pinned to the same release (`image_tag`). Bump both together; changes are pushed to the existing host over SSH, keeping the server and its IPs (see [Upgrading kube-shim](#upgrading-kube-shim)) |
 | **State** | Local (`kube-shim/terraform.tfstate`, gitignored) — contains the minted bearer tokens and the worker SSH private key in plain text; see Notes |
 | **Cost** | ~€5/month for the host itself (UpCloud's published price for the smallest real plan, `1xCPU-1GB`/25GB MaxIOPS — not independently re-verified against a real invoice yet); worker VMs billed per-job while running, on top |
 
@@ -520,7 +520,7 @@ steps to stand up a fresh instance via this module and cut DNS over to it:
    `user_data` only seeds a brand-new host: the module ignores later
    changes to it (the UpCloud provider would otherwise replace the server).
    Later input changes, such as `image_tag`, `acme_directory` or
-   `api_token_count`, reach the existing host over SSH instead; see
+   `api_tokens`, reach the existing host over SSH instead; see
    [Upgrading kube-shim](#upgrading-kube-shim). The first apply also does
    that push once, so load the deploy key into your SSH agent beforehand
    (see there).
@@ -549,14 +549,14 @@ steps to stand up a fresh instance via this module and cut DNS over to it:
    fails unless the certificate is CA-trusted. If it doesn't succeed,
    check `journalctl -u kube-shim.service` on the host.
 
-5. **Save the bearer token.**
+5. **Save the operator token.**
    ```sh
-   tofu output -json api_tokens
+   tofu output -json api_tokens | jq -r .operator
    ```
-   `api_tokens[0]` is the only time this value is ever shown in the clear by
-   this tooling — save it somewhere durable (a password manager, not
-   another file in this repo) for your own `kubectl`/`kubernetes_provider`
-   client config against the instance.
+   `api_tokens` is a map keyed by the names in `kube-shim.tf`. Save
+   `operator` in a password manager (not another file in this repo) for
+   your own `kubectl`/`curl`. `kube-shim-jobs` needs no copy: that module
+   reads its own token from this state.
 
 6. **Decommission the old instance.** Once the new one is confirmed healthy
    (`curl https://kube-shim.brawer.ch/healthz` — no token needed, Phase
@@ -572,7 +572,7 @@ The host runs a pinned container release (`image_tag` in `kube-shim.tf`),
 so it never upgrades on its own. To move to a new release:
 
 1. In `kube-shim/kube-shim.tf`, bump both the module `source`'s `?ref=`
-   and `image_tag` to the new tag (e.g. `v0.3.5`).
+   and `image_tag` to the new tag (e.g. `v0.4.1`).
 2. Load the deploy key into your SSH agent for an hour. The module pushes
    to the host as `admin` over SSH, and `operator_ssh_private_key` is left
    null, so it uses the agent:
@@ -602,15 +602,37 @@ If the push fails (for example, SSH isn't reachable),
 `terraform_data.push_config` is left tainted and the next `tofu apply`
 retries it. The running service is untouched until the restart.
 
-### Scheduling real CronJobs against it
+### Rotating credentials
 
-Not built in this PR — once the instance above is confirmed healthy, point a
-`hashicorp/kubernetes` `kubernetes_provider` at it using `tofu output -raw
-public_ipv4` (or the hostname, once DNS resolves) and `api_tokens[0]` as the
-bearer token, the same way kube-shim's own
-[`docs/IMPLEMENTATION_PLAN.md`](https://github.com/brawer/kube-shim/blob/main/docs/IMPLEMENTATION_PLAN.md)
-testing sections do by hand with `curl`/`kubectl`. The real `osmdiffs`
-`CronJob` definition is a separate follow-up.
+Each client has its own named bearer token (`api_tokens` in
+`kube-shim.tf`), so one can be replaced without touching the others:
+
+1. Add a new name next to the old one, e.g. `kube-shim-jobs-2027 = {}`,
+   and apply (pushed in place, see [Upgrading kube-shim](#upgrading-kube-shim)).
+   Both tokens now work.
+2. Move the client to the new name: for `kube-shim-jobs`, the token key in
+   `kube-shim-jobs/main.tf`; for `operator`, your password manager.
+3. Remove the old name and apply again. Or, instead, give it
+   `expires_at = "2027-01-01T00:00:00Z"` and kube-shim rejects it from then
+   on without another apply.
+
+The other two secrets on the host have no such knob, and both are pushed in
+place too:
+- **Worker SSH key:** `tofu apply -replace=module.kube_shim.tls_private_key.worker_ssh`,
+  while no job is running (running workers only accept the old key).
+- **UpCloud runtime token** (`brawer_kubeshim`, expires after at most 365
+  days): create a new token as that user, write it to
+  `secrets/kube_shim_upcloud_runtime_token`, apply, then revoke the old one
+  in the UpCloud Hub.
+
+The module's own [Rotating credentials](https://github.com/brawer/kube-shim/tree/main/tofu/upcloud#rotating-credentials)
+has the details. Up to module v0.3.x, every one of these secrets was also
+written into the server's `user_data` (brawer/kube-shim#103), and this host
+still carries those values there. All three were rotated once on the
+upgrade to v0.4.0 (2026-11-07), so what's left there no longer works.
+
+Jobs themselves are scheduled from `kube-shim-jobs/`; see
+[kube-shim jobs](#kube-shim-jobs).
 
 ### Notes
 
@@ -635,14 +657,15 @@ its own short-lived UpCloud worker VM, billed only while it runs.
 |---|---|
 | **Talks to** | `https://kube-shim.brawer.ch`, with the bearer token read from `kube-shim/`'s state (`terraform_remote_state`, no secrets file) |
 | **State** | Local (`kube-shim-jobs/terraform.tfstate`, gitignored) — contains the S3 credentials in plain text |
-| **Jobs** | `osmdiffs-weekly`: Sundays 03:00 UTC, 6 CPU / 8 GB, 250 GB MaxIOPS scratch, `ghcr.io/brawer/osmdiffs:latest` |
+| **Jobs** | `osmdiffs-weekly`: Sundays 03:00 UTC, 6 CPU / 8 GB, 250 GB MaxIOPS scratch, `ghcr.io/brawer/osmdiffs:v0.8.12` |
 
-Needs kube-shim v0.3.1 or later. The host runs v0.3.4; the job depends on
-kube-shim#84 (env values), #85 (worker sizing), #86 (`securityContext`,
-`mountPath`) and #92 (the provider's default-valued fields).
+Needs kube-shim v0.4.0 or later: env values (kube-shim#84), worker sizing
+(#85), `securityContext`/`mountPath` (#86), the provider's default-valued
+fields (#92), `suspend` and CronJob updates (#105), and protobuf request
+bodies (#106).
 
-kube-shim doesn't implement `suspend`, so applying schedules the CronJob
-right away; the next Sunday 03:00 UTC run follows on its own. To apply:
+The CronJob is applied with `suspend = true`, so nothing runs on schedule
+until the first run, started by hand, has succeeded. To apply:
 
 ```sh
 cd kube-shim-jobs
@@ -653,7 +676,12 @@ tofu apply
 Per osmdiffs' [PRODUCTION.md](https://github.com/brawer/osmdiffs/blob/main/docs/PRODUCTION.md),
 do the first production run by hand, and check
 `https://osmdiffs.brawer.ch/data/datapackage.json` before relying on the
-schedule.
+schedule. Then set `suspend = false` in `osmdiffs.tf` and apply again.
+`starting_deadline_seconds` (1 h) keeps that from starting a catch-up run
+for a Sunday that was missed while suspended.
+
+To move to a new osmdiffs release, bump the pinned `image` tag in
+`osmdiffs.tf` and apply; it takes effect from the next run.
 
 The S3 destinations are the same ones the Infomaniak test run used
 (re-checked 2026-11-06): Bunny storage zone `osmdiffs-data-de` (public) and
