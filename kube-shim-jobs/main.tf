@@ -48,5 +48,5 @@ data "terraform_remote_state" "infomaniak_s3_auth" {
 # cluster_ca_certificate is needed.
 provider "kubernetes" {
   host  = "https://kube-shim.brawer.ch"
-  token = data.terraform_remote_state.kube_shim.outputs.api_tokens[0]
+  token = data.terraform_remote_state.kube_shim.outputs.api_tokens["kube-shim-jobs"]
 }

@@ -7,9 +7,8 @@
 # (disabled since 2026-09-16), which ran it successfully on Infomaniak
 # Kubernetes; the comments there record what that run confirmed.
 #
-# Needs kube-shim v0.3.1+ (brawer/kube-shim#84, #85, #86, #92). kube-shim
-# doesn't implement `suspend`, so applying schedules runs right away. See
-# README.md's "kube-shim jobs" section.
+# Needs kube-shim v0.4.0+ (brawer/kube-shim#84, #85, #86, #92, #105, #106).
+# See README.md's "kube-shim jobs" section.
 
 locals {
   # Two independent S3 destinations (PRODUCTION.md): PUBLIC_S3_* for the
@@ -54,6 +53,12 @@ resource "kubernetes_cron_job_v1" "osmdiffs" {
   spec {
     schedule = "0 3 * * 0" # 03:00 UTC every Sunday
 
+    # Suspended until the first run, started by hand as osmdiffs'
+    # PRODUCTION.md asks, has succeeded; then set to false and apply.
+    # starting_deadline_seconds below keeps that unsuspend from starting a
+    # catch-up run for a missed Sunday (brawer/kube-shim#105).
+    suspend = true
+
     concurrency_policy            = "Forbid" # never overlap a multi-hour run
     successful_jobs_history_limit = 3
     failed_jobs_history_limit     = 3
@@ -85,12 +90,9 @@ resource "kubernetes_cron_job_v1" "osmdiffs" {
             container {
               name = "osmdiffs"
 
-              # `latest` is pushed by osmdiffs' release workflow together
-              # with each vX.Y.Z tag (v0.8.10 as of 2026-11-06). Each
-              # kube-shim job runs on a brand-new worker VM, so the image is
-              # pulled at job start and every run gets the newest release.
-              # PRODUCTION.md recommends pinning; to pin, use e.g. ":v0.8.10".
-              image = "ghcr.io/brawer/osmdiffs:latest"
+              # Pinned, as PRODUCTION.md recommends: bump deliberately to a
+              # release from https://github.com/brawer/osmdiffs/releases.
+              image = "ghcr.io/brawer/osmdiffs:v0.8.12"
 
               # The image's ENTRYPOINT is the osmdiffs binary. $(RUN_ID) is
               # Kubernetes' env-var substitution in args (no shell needed).
