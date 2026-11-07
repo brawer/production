@@ -467,7 +467,7 @@ hand-edited file contents over SSH.
 | | |
 |---|---|
 | **Provider** | UpCloud (`de-fra1`) |
-| **IaC** | OpenTofu, via `github.com/brawer/kube-shim//tofu/upcloud`, pinned to a release tag (`?ref=v0.4.2`), with the container pinned to the same release (`image_tag`). Bump both together; changes are pushed to the existing host over SSH, keeping the server and its IPs (see [Upgrading kube-shim](#upgrading-kube-shim)) |
+| **IaC** | OpenTofu, via `github.com/brawer/kube-shim//tofu/upcloud`, pinned to a release tag (`?ref=v0.4.3`), with the container pinned to the same release (`image_tag`). Bump both together; changes are pushed to the existing host over SSH, keeping the server and its IPs (see [Upgrading kube-shim](#upgrading-kube-shim)) |
 | **State** | Local (`kube-shim/terraform.tfstate`, gitignored) — contains the minted bearer tokens and the worker SSH private key in plain text; see Notes |
 | **Cost** | ~€5/month for the host itself (UpCloud's published price for the smallest real plan, `1xCPU-1GB`/25GB MaxIOPS — not independently re-verified against a real invoice yet); worker VMs billed per-job while running, on top |
 
@@ -572,7 +572,7 @@ The host runs a pinned container release (`image_tag` in `kube-shim.tf`),
 so it never upgrades on its own. To move to a new release:
 
 1. In `kube-shim/kube-shim.tf`, bump both the module `source`'s `?ref=`
-   and `image_tag` to the new tag (e.g. `v0.4.3`).
+   and `image_tag` to the new tag (e.g. `v0.4.4`).
 2. Load the deploy key into your SSH agent for an hour. The module pushes
    to the host as `admin` over SSH, and `operator_ssh_private_key` is left
    null, so it uses the agent:
