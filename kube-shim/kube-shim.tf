@@ -8,6 +8,15 @@
 # instance's credentials (both server.api_tokens bearer tokens and its
 # [upcloud] runtime token) are being treated as compromised and are not
 # reused anywhere here -- this module mints entirely fresh ones.
+#
+# Up to module v0.3.x, config.toml (with every secret) was rendered into
+# the server's user_data, which anyone with API access to the UpCloud
+# account can read, and which stays on the server for its lifetime
+# (brawer/kube-shim#103). This host was created that way, so on upgrading
+# to v0.4.0 (2026-11-07) all three were rotated once: the API tokens (new
+# values from the switch to named tokens), worker_ssh (-replace) and the
+# runtime token (new brawer_kubeshim token). Its user_data still holds the
+# old, now dead, values.
 module "kube_shim" {
   # Pinned to a release tag, not main: this module mints credentials and
   # decides what runs on the host, so an upstream merge shouldn't reach a
@@ -15,18 +24,26 @@ module "kube_shim" {
   # image_tag below. Since v0.3.4 the module ignores user_data changes on
   # an existing host and pushes config.toml and the quadlet unit over SSH
   # instead, so a bump updates the host in place (see README.md).
-  source = "github.com/brawer/kube-shim//tofu/upcloud?ref=v0.3.4"
+  source = "github.com/brawer/kube-shim//tofu/upcloud?ref=v0.4.0"
 
   # The kube-shim container release to run. Pinned rather than "latest",
   # which also drops podman's AutoUpdate=registry: the host changes version
   # only when this value changes. Keep it in step with `source`.
-  image_tag = "v0.3.4"
+  image_tag = "v0.4.0"
 
   # operator_ssh_private_key is left null, so `tofu apply` pushes over SSH
   # with whatever key your SSH agent holds; that must be the deploy key
   # below (see README.md's "Upgrading kube-shim").
 
   hostname = "kube-shim.brawer.ch"
+
+  # One bearer token per client, so each can be rotated or retired on its
+  # own (see README.md's "Rotating a token"). Values: `tofu output -json
+  # api_tokens`, a map keyed by these names.
+  api_tokens = {
+    kube-shim-jobs = {} # read by ../kube-shim-jobs through remote state
+    operator       = {} # your own kubectl/curl; kept in the password manager
+  }
 
   # Reuses the existing deploy keypair (secrets/kube-shim-deploy_ed25519 in
   # the kube-shim repo) -- that key itself was never part of either

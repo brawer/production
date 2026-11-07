@@ -16,7 +16,7 @@ output "server_id" {
 }
 
 output "api_tokens" {
-  description = "Bearer token(s) for kube-shim's authenticated API. Not used by anything in this repo yet -- save at least api_tokens[0] somewhere (a password manager, not another file in this repo) for your own kubectl/Terraform client config against the instance."
+  description = "Bearer tokens for kube-shim's authenticated API, as a map keyed by the names in kube-shim.tf's api_tokens. \"kube-shim-jobs\" is read by ../kube-shim-jobs through remote state; save \"operator\" in a password manager (not another file in this repo) for your own kubectl/curl."
   value       = module.kube_shim.api_tokens
   sensitive   = true
 }
