@@ -109,15 +109,28 @@ resource "kubernetes_cron_job_v1" "osmdiffs" {
                 }
               }
 
-              # PRODUCTION.md's recommended minimum (6 CPU / 8 GB).
+              # 12 CPU: the scratch volume is billed per hour and costs
+              # more than the server itself (250 GB MaxIOPS ≈ €0.078/h), so
+              # a faster run can be cheaper overall. At 6 CPU (2026-11-07)
+              # the run took 4h43m: €0.116/h for CLOUDNATIVE-6xCPU-16GB
+              # plus scratch, ≈ €0.91. kube-shim picks the cheapest plan that
+              # fits, CLOUDNATIVE-12xCPU-24GB (€0.140/h), which beats that
+              # if the run finishes in under ~4.2h. PRODUCTION.md hasn't
+              # swept CPU counts yet.
+              #
+              # Memory: osmdiffs mmaps its scratch files, so it sits at
+              # whatever limit it gets, but below ~6 GB import_osm slows down
+              # sharply (PRODUCTION.md's sweep: 4g took 1h40m longer). 16Gi
+              # costs nothing extra on the 24 GB plan and leaves room for
+              # planet growth and for the VM itself.
               resources {
                 requests = {
-                  cpu    = "6"
-                  memory = "8Gi"
+                  cpu    = "12"
+                  memory = "16Gi"
                 }
                 limits = {
-                  cpu    = "6"
-                  memory = "8Gi"
+                  cpu    = "12"
+                  memory = "16Gi"
                 }
               }
 
