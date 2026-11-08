@@ -98,16 +98,18 @@ resource "bunnynet_dns_record" "dkim" {
 }
 
 # kube-shim control-plane (issue #36 originally), provisioned by
-# ../kube-shim/ (server uuid 00c3030f-47d7-4d04-93db-6bac7d238d57). Values
-# are that module's `tofu output public_ipv4`/`public_ipv6`; any change to
-# its inputs replaces the server, most likely with new IPs, so update these
-# again after such an apply (see the "## kube-shim" runbook in README.md).
+# ../kube-shim/ (server uuid 00447eb8-f441-42ba-9e15-513d3efa27f2, since the
+# move to STARTER-1xCPU-1GB on 2026-11-08). Values are that module's `tofu
+# output public_ipv4`/`public_ipv6`. Most input changes are pushed to the
+# host in place, but replacing the server (e.g. a plan or boot-disk change)
+# gives it new IPs: update these after such an apply (see the "## kube-shim"
+# runbook in README.md).
 resource "bunnynet_dns_record" "kube_shim_a" {
   zone = bunnynet_dns_zone.this["brawer.ch"].id
   name = "kube-shim"
 
   type  = "A"
-  value = "80.47.228.28"
+  value = "87.58.155.213"
 }
 
 resource "bunnynet_dns_record" "kube_shim_aaaa" {
@@ -115,5 +117,5 @@ resource "bunnynet_dns_record" "kube_shim_aaaa" {
   name = "kube-shim"
 
   type  = "AAAA"
-  value = "2a04:3542:1000:910:4086:11ff:fec4:1985"
+  value = "2a04:3542:1000:910:4086:11ff:fec4:710b"
 }
