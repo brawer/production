@@ -467,9 +467,9 @@ hand-edited file contents over SSH.
 | | |
 |---|---|
 | **Provider** | UpCloud (`de-fra1`) |
-| **IaC** | OpenTofu, via `github.com/brawer/kube-shim//tofu/upcloud`, pinned to a release tag (`?ref=v0.4.3`), with the container pinned to the same release (`image_tag`). Bump both together; changes are pushed to the existing host over SSH, keeping the server and its IPs (see [Upgrading kube-shim](#upgrading-kube-shim)) |
+| **IaC** | OpenTofu, via `github.com/brawer/kube-shim//tofu/upcloud`, pinned to a release tag (`?ref=v0.5.0`), with the container pinned to the same release (`image_tag`). Bump both together; changes are pushed to the existing host over SSH, keeping the server and its IPs (see [Upgrading kube-shim](#upgrading-kube-shim)) |
 | **State** | Local (`kube-shim/terraform.tfstate`, gitignored) — contains the minted bearer tokens and the worker SSH private key in plain text; see Notes |
-| **Cost** | ~€5/month for the host itself (UpCloud's published price for the smallest real plan, `1xCPU-1GB`/25GB MaxIOPS — not independently re-verified against a real invoice yet); worker VMs billed per-job while running, on top |
+| **Cost** | Host: `STARTER-1xCPU-1GB` with its included 10 GB standard disk, 0.4464 cents/h ≈ €3.26/month in `de-fra1` (UpCloud price API, 2026-11; it was €8.26/month on the legacy `1xCPU-1GB` plan until 2026-11-08). Worker VMs and scratch volumes are billed per job on top; see kube-shim's FOCUS cost report under [kube-shim jobs](#kube-shim-jobs) |
 
 ### Bringing kube-shim back up
 
@@ -572,7 +572,7 @@ The host runs a pinned container release (`image_tag` in `kube-shim.tf`),
 so it never upgrades on its own. To move to a new release:
 
 1. In `kube-shim/kube-shim.tf`, bump both the module `source`'s `?ref=`
-   and `image_tag` to the new tag (e.g. `v0.4.4`).
+   and `image_tag` to the new tag (e.g. `v0.5.1`).
 2. Load the deploy key into your SSH agent for an hour. The module pushes
    to the host as `admin` over SSH, and `operator_ssh_private_key` is left
    null, so it uses the agent:
@@ -597,6 +597,22 @@ so it never upgrades on its own. To move to a new release:
    ```sh
    curl -sS -D - -o /dev/null https://kube-shim.brawer.ch/livez
    ```
+
+**When the plan replaces the server** (for example kube-shim v0.5.0's
+switch to `STARTER-1xCPU-1GB`, which changed the boot disk), follow the
+module README's "Moving a host created with v0.4.3 or earlier". In short:
+1. Make sure no job is running and none is due.
+2. Stop kube-shim and `tar` its `kube-shim-data` directory to this machine.
+3. Apply.
+4. Update `bunny/dns.tf` to the new IPs and apply `bunny/`.
+5. On the new host, stop kube-shim and restore `db.sqlite` and
+   `acme-cache/` with `tar --numeric-owner`, then start it again. Keep the
+   freshly pushed `config.toml`.
+
+That keeps the CronJobs, Secrets and job history, and the cached
+certificate means no new Let's Encrypt request. This was done on
+2026-11-08, with about 15 minutes of downtime. Delete the local copy
+afterwards: it holds the Secrets' values and the ACME account key.
 
 If the push fails (for example, SSH isn't reachable),
 `terraform_data.push_config` is left tainted and the next `tofu apply`
