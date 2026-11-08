@@ -53,11 +53,12 @@ resource "kubernetes_cron_job_v1" "osmdiffs" {
   spec {
     schedule = "0 3 * * 0" # 03:00 UTC every Sunday
 
-    # Suspended until the first run, started by hand as osmdiffs'
-    # PRODUCTION.md asks, has succeeded; then set to false and apply.
-    # starting_deadline_seconds below keeps that unsuspend from starting a
-    # catch-up run for a missed Sunday (brawer/kube-shim#105).
-    suspend = true
+    # Was applied suspended until the first run, started by hand as
+    # osmdiffs' PRODUCTION.md asks, had succeeded (2026-11-07:
+    # data/datapackage.json published as designed). Set to true to pause
+    # the schedule. starting_deadline_seconds below keeps an unsuspend from
+    # starting a catch-up run for a missed Sunday (brawer/kube-shim#105).
+    suspend = false
 
     concurrency_policy            = "Forbid" # never overlap a multi-hour run
     successful_jobs_history_limit = 3
@@ -109,28 +110,29 @@ resource "kubernetes_cron_job_v1" "osmdiffs" {
                 }
               }
 
-              # 12 CPU: the scratch volume is billed per hour and costs
-              # more than the server itself (250 GB MaxIOPS ≈ €0.078/h), so
-              # a faster run can be cheaper overall. At 6 CPU (2026-11-07)
-              # the run took 4h43m: €0.116/h for CLOUDNATIVE-6xCPU-16GB
-              # plus scratch, ≈ €0.91. kube-shim picks the cheapest plan that
-              # fits, CLOUDNATIVE-12xCPU-24GB (€0.140/h), which beats that
-              # if the run finishes in under ~4.2h. PRODUCTION.md hasn't
-              # swept CPU counts yet.
+              # 6 CPU / 8Gi, PRODUCTION.md's recommended minimum, measured on
+              # UpCloud against 12 CPU / 16Gi (one run each, kube-shim's
+              # FOCUS cost report):
+              #   6 CPU,  CLOUDNATIVE-6xCPU-16GB:  4h43m, €0.93 (2026-11-07)
+              #   12 CPU, CLOUDNATIVE-12xCPU-24GB: 5h37m, €1.23 (2026-11-08)
+              # 12 CPU was slower in nearly every step, not just the parallel
+              # ones, so more cores didn't help. The 250 GB scratch volume
+              # (≈ €0.078/h) is billed for the whole run, so run time
+              # matters as much as the server's hourly rate.
               #
-              # Memory: osmdiffs mmaps its scratch files, so it sits at
-              # whatever limit it gets, but below ~6 GB import_osm slows down
-              # sharply (PRODUCTION.md's sweep: 4g took 1h40m longer). 16Gi
-              # costs nothing extra on the 24 GB plan and leaves room for
-              # planet growth and for the VM itself.
+              # Memory: osmdiffs mmaps its scratch files and sits at whatever
+              # limit it gets (anonymous memory peaked at 0.85-0.88 GiB in
+              # both runs). 16Gi was no faster than 8Gi, but below ~6 GB
+              # import_osm slows down sharply (PRODUCTION.md's sweep: 4g took
+              # 1h40m longer).
               resources {
                 requests = {
-                  cpu    = "12"
-                  memory = "16Gi"
+                  cpu    = "6"
+                  memory = "8Gi"
                 }
                 limits = {
-                  cpu    = "12"
-                  memory = "16Gi"
+                  cpu    = "6"
+                  memory = "8Gi"
                 }
               }
 
