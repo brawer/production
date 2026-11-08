@@ -657,15 +657,16 @@ its own short-lived UpCloud worker VM, billed only while it runs.
 |---|---|
 | **Talks to** | `https://kube-shim.brawer.ch`, with the bearer token read from `kube-shim/`'s state (`terraform_remote_state`, no secrets file) |
 | **State** | Local (`kube-shim-jobs/terraform.tfstate`, gitignored) — contains the S3 credentials in plain text |
-| **Jobs** | `osmdiffs-weekly`: Sundays 03:00 UTC, 12 CPU / 16 GB, 250 GB MaxIOPS scratch, `ghcr.io/brawer/osmdiffs:v0.8.12` |
+| **Jobs** | `osmdiffs-weekly`: Sundays 03:00 UTC, 6 CPU / 8 GB, 250 GB MaxIOPS scratch, `ghcr.io/brawer/osmdiffs:v0.8.12` |
 
 Needs kube-shim v0.4.0 or later: env values (kube-shim#84), worker sizing
 (#85), `securityContext`/`mountPath` (#86), the provider's default-valued
 fields (#92), `suspend` and CronJob updates (#105), and protobuf request
 bodies (#106).
 
-The CronJob is applied with `suspend = true`, so nothing runs on schedule
-until the first run, started by hand, has succeeded. To apply:
+The CronJob runs on schedule (`suspend = false`). The first production run
+was started by hand on 2026-11-07, as PRODUCTION.md asks, and published
+`data/datapackage.json` as designed. To apply:
 
 ```sh
 cd kube-shim-jobs
@@ -673,12 +674,23 @@ tofu init
 tofu apply
 ```
 
-Per osmdiffs' [PRODUCTION.md](https://github.com/brawer/osmdiffs/blob/main/docs/PRODUCTION.md),
-do the first production run by hand, and check
-`https://osmdiffs.brawer.ch/data/datapackage.json` before relying on the
-schedule. Then set `suspend = false` in `osmdiffs.tf` and apply again.
-`starting_deadline_seconds` (1 h) keeps that from starting a catch-up run
-for a Sunday that was missed while suspended.
+To pause the schedule, set `suspend = true` in `osmdiffs.tf` and apply.
+`starting_deadline_seconds` (1 h) keeps a later unsuspend from starting a
+catch-up run for a Sunday that was missed while suspended.
+
+To run it once by hand, `POST` a Job built from the CronJob's
+`spec.jobTemplate.spec` to `/apis/batch/v1/namespaces/default/jobs` with the
+`operator` token (that's how the 2026-11 runs were started; `kubectl create
+job --from=cronjob/...` hasn't been tried against kube-shim). Then check
+`https://osmdiffs.brawer.ch/data/datapackage.json`, and the run's
+`logs/<job-name>.log` in `osmdiffs-internal`. On success, osmdiffs writes
+nothing to stdout or stderr, so `kubectl logs` is empty.
+
+Cost: kube-shim's FOCUS cost report
+(`GET /apis/cost.kube-shim.brawer.ch/v1/report?from=YYYY-MM-DD&to=YYYY-MM-DD`)
+lists each run's worker VM, boot disk, IPv4 and scratch volume. The
+6-CPU run on 2026-11-07 came to €0.93; a 12-CPU test run was slower and
+cost €1.23 (see the comment in `osmdiffs.tf`).
 
 To move to a new osmdiffs release, bump the pinned `image` tag in
 `osmdiffs.tf` and apply; it takes effect from the next run.
