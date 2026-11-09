@@ -673,7 +673,7 @@ its own short-lived UpCloud worker VM, billed only while it runs.
 |---|---|
 | **Talks to** | `https://kube-shim.brawer.ch`, with the bearer token read from `kube-shim/`'s state (`terraform_remote_state`, no secrets file) |
 | **State** | Local (`kube-shim-jobs/terraform.tfstate`, gitignored) — contains the S3 credentials in plain text |
-| **Jobs** | `osmdiffs-weekly`: Sundays 03:00 UTC, 6 CPU / 8 GB, 250 GB MaxIOPS scratch, `ghcr.io/brawer/osmdiffs:v0.8.12` |
+| **Jobs** | `osmdiffs-weekly`: Sundays 03:00 UTC, 6 CPU / 8 GB, 250 GB MaxIOPS scratch, `ghcr.io/brawer/osmdiffs:v0.8.13` |
 
 Needs kube-shim v0.4.0 or later: env values (kube-shim#84), worker sizing
 (#85), `securityContext`/`mountPath` (#86), the provider's default-valued
