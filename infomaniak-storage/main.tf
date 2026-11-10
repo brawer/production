@@ -17,8 +17,17 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.0"
     }
+    # The buckets themselves are Swift containers managed through the
+    # OpenStack provider (buckets.tf): only the Swift API can set a
+    # container's read ACL, which Infomaniak's S3 layer accepts as
+    # put-bucket-acl but silently ignores (checked 2026-11-10).
+    openstack = {
+      source  = "terraform-provider-openstack/openstack"
+      version = "~> 3.4"
+    }
   }
-  required_version = ">= 1.0"
+  # import and removed blocks (buckets.tf).
+  required_version = ">= 1.7"
 }
 
 # Credentials are OpenStack EC2-style access/secret keys, NOT the Infomaniak
@@ -58,4 +67,16 @@ provider "aws" {
   endpoints {
     s3 = "https://s3.pub1.infomaniak.cloud"
   }
+}
+
+# Same OpenStack identity as ../infomaniak-s3-auth, which mints the S3 (EC2)
+# credential the aws provider above uses.
+provider "openstack" {
+  auth_url            = "https://api.pub1.infomaniak.cloud/identity/v3"
+  user_name           = "PCU-SSOT8WN"
+  user_domain_name    = "default"
+  project_domain_name = "default"
+  tenant_id           = "94641c761a454e58b221b309701db850"
+  region              = "dc3-a"
+  password            = trimspace(file("${path.module}/../secrets/infomaniak_openstack_password"))
 }

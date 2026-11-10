@@ -282,7 +282,7 @@ resource it comes from. `infomaniak-k8s/` reads its kubeconfig back from
 | **`infomaniak/`** | Managed Kubernetes (KaaS) cluster, via the [Infomaniak provider](https://registry.terraform.io/providers/Infomaniak/infomaniak/latest) |
 | **`infomaniak-k8s/`** | The CronJob workload on that cluster, via `hashicorp/kubernetes` |
 | **`infomaniak-s3-auth/`** | An OpenStack EC2 credential (S3 access/secret keys) for the project, via `terraform-provider-openstack/openstack` |
-| **`infomaniak-storage/`** | S3-compatible Object Storage buckets, via `hashicorp/aws` pointed at a custom endpoint, using that credential |
+| **`infomaniak-storage/`** | Object Storage buckets (Swift containers), via `terraform-provider-openstack/openstack`, including their public-read ACL. Jobs read and write them over the S3-compatible API, with that credential |
 | **State** | Local (`<module>/terraform.tfstate`, all gitignored) |
 | **Cost** | KaaS control plane free (`pack_name = "shared"`); worker node(s) billed only while running (`min_instances = 0`, scale-to-zero, ~$0.04/h when up); Object Storage billed per GB stored/transferred |
 
@@ -355,17 +355,43 @@ creation (confirmed by reproducing the failure with `TF_LOG=DEBUG`).
 
 ### Object Storage (`infomaniak-storage/buckets.tf`)
 
-Internal-only S3 buckets (logs, inter-run caches for scheduled jobs — not for
-public downloads, that's Bunny's `/data/*` CDN). Infomaniak Public Cloud
-Object Storage is Swift with an S3-compatible layer on top and has no
-dedicated Infomaniak Terraform resource, so this module talks to it like any
-other S3-compatible service: `hashicorp/aws` pointed at
-`https://s3.pub1.infomaniak.cloud`, path-style addressing (see above),
-`region` a pure compatibility placeholder (data stays in Infomaniak's Swiss
-DCs regardless), credentials from `infomaniak-s3-auth/`. Buckets are private
-by default (nothing here sets a public-read policy); `local.buckets`
-currently has one entry, **`osmdiffs-internal`** (live, created 2026-09-14),
-for the weekly cronjob above.
+Buckets for scheduled batch jobs: logs and inter-run caches. They're not for
+public downloads; those go through Bunny's `/data/*` CDN. Infomaniak Public
+Cloud Object Storage is Swift with an S3-compatible layer on top:
+- **Jobs** use the S3 API: `https://s3.pub1.infomaniak.cloud`, path-style
+  addressing (see above), `region` a pure compatibility placeholder (data
+  stays in Infomaniak's Swiss DCs regardless), with the credential from
+  `infomaniak-s3-auth/`.
+- **The buckets themselves** are managed through the Swift API with the
+  OpenStack provider, since only Swift can set a container's read ACL.
+  Infomaniak's S3 layer accepts `put-bucket-acl --acl public-read` but
+  silently ignores it (checked 2026-11-10). Until 2026-11-10 the bucket was
+  an `aws_s3_bucket`; an `import` + `removed` block moved it over without
+  recreating it.
+
+`local.buckets` has one entry, **`osmdiffs-internal`** (created 2026-09-14),
+holding the weekly osmdiffs run's `logs/<job-name>.log`. It's
+**public-read** (`public_read = true`, Swift ACL `.r:*,.rlistings`):
+anyone can list and download its contents without a key, but writing still
+needs the credential. Nothing in it is confidential (input URLs, step
+timings, memory and feature counts). Keep it that way: anything a job puts
+in this bucket is public.
+
+#### Reading without a key
+
+The public address is the **Swift** URL (the S3 URL still needs a key), from
+`tofu -chdir=infomaniak-storage output public_urls`:
+
+```sh
+B=https://s3.pub1.infomaniak.cloud/object/v1/AUTH_94641c761a454e58b221b309701db850/osmdiffs-internal
+curl -sS "$B/?format=json"                 # list: name, bytes, last_modified, …
+curl -sS "$B/?prefix=logs/&format=json"    # list one prefix
+curl -sS "$B/logs/osmdiffs-manual-20261107c.log" | jq .   # one run's log (JSON lines)
+```
+
+This works for any client, including Claude Code sessions in the cloud,
+with no secret to hand out. Uploads, deletes and ACL changes without a key
+get HTTP 401.
 
 ### Setup
 
