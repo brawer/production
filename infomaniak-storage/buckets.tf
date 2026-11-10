@@ -1,29 +1,59 @@
 # SPDX-License-Identifier: MIT
 # SPDX-FileCopyrightText: 2026 Sascha Brawer
 
-# Internal-only buckets: not for public downloads (that's Bunny - see
-# ../bunny's /data/* download CDN) but scratch space for scheduled batch
-# jobs - logs and caches carried between runs. Private by default (a Swift
-# container needs an explicit public-read policy/ACL to be public, which
-# nothing here sets); "public_access_block"-style hardening isn't included
-# since Infomaniak's S3 compatibility layer doesn't implement every AWS-only
-# API (docs: "some features are not available") and that one is unverified
-# here - revisit once buckets exist to check `aws s3api get-bucket-acl`.
+# Buckets for scheduled batch jobs: logs and caches carried between runs.
+# Not for the public downloads, which go through Bunny (../bunny's /data/*
+# CDN).
 #
-#   project - which project's workload this bucket belongs to. Currently
-#             just a label (no shared config depends on it), but keeps the
-#             mapping to consumers (e.g. ../infomaniak-k8s's cronjob)
-#             explicit as more buckets get added here.
+# Each bucket is a Swift container. Infomaniak's S3 layer (used by the jobs
+# themselves, with the credential from ../infomaniak-s3-auth) can't set
+# Swift ACLs: put-bucket-acl --acl public-read reports success but changes
+# nothing. So the containers are managed through the OpenStack provider,
+# which sets X-Container-Read directly.
+#
+#   project     - which project's workload this bucket belongs to (a label).
+#   public_read - true makes the bucket world-readable and listable
+#                 (".r:*,.rlistings"), anonymously, over the Swift URL in
+#                 the public_urls output. Never writable without a key.
+#                 Only for content that's fine to publish.
 locals {
   buckets = {
     "osmdiffs-internal" = {
-      project = "osmdiffs" # logs/caches for the weekly cronjob, ../infomaniak-k8s
+      # Logs (logs/<job>.log) from the weekly osmdiffs CronJob in
+      # ../kube-shim-jobs. Public since 2026-11-10: nothing in them is
+      # confidential (input URLs, timings, memory and feature counts), and
+      # public read lets Claude Code sessions, including cloud ones, read
+      # them without any credential.
+      project     = "osmdiffs"
+      public_read = true
     }
   }
 }
 
-resource "aws_s3_bucket" "this" {
+resource "openstack_objectstorage_container_v1" "this" {
   for_each = local.buckets
 
-  bucket = each.key
+  name           = each.key
+  storage_policy = "Policy-0" # Infomaniak's default; changing it replaces the container
+  container_read = each.value.public_read ? ".r:*,.rlistings" : null
+  # As Infomaniak sets it on containers created through the S3 API; kept
+  # unchanged so writes still need the project's own credentials.
+  container_write = "."
+}
+
+# The container was created through the S3 API as aws_s3_bucket.this (until
+# 2026-11-10). Adopt it here, and drop the old resource from state without
+# deleting the bucket.
+import {
+  for_each = local.buckets
+  to       = openstack_objectstorage_container_v1.this[each.key]
+  id       = each.key
+}
+
+removed {
+  from = aws_s3_bucket.this
+
+  lifecycle {
+    destroy = false # forget only; the bucket lives on as the container above
+  }
 }
