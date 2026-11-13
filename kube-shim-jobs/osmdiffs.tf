@@ -93,7 +93,7 @@ resource "kubernetes_cron_job_v1" "osmdiffs" {
 
               # Pinned, as PRODUCTION.md recommends: bump deliberately to a
               # release from https://github.com/brawer/osmdiffs/releases.
-              image = "ghcr.io/brawer/osmdiffs:v0.8.13"
+              image = "ghcr.io/brawer/osmdiffs:v0.8.15"
 
               # The image's ENTRYPOINT is the osmdiffs binary. $(RUN_ID) is
               # Kubernetes' env-var substitution in args (no shell needed).
