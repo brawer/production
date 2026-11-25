@@ -51,7 +51,7 @@ resource "kubernetes_cron_job_v1" "osmdiffs" {
   }
 
   spec {
-    schedule = "0 5 * * 4" # 05:00 UTC every Thursday
+    schedule = "0 6 * * 3" # 06:00 UTC every Wednesday
 
     # Was applied suspended until the first run, started by hand as
     # osmdiffs' PRODUCTION.md asks, had succeeded (2026-11-07:
@@ -93,7 +93,7 @@ resource "kubernetes_cron_job_v1" "osmdiffs" {
 
               # Pinned, as PRODUCTION.md recommends: bump deliberately to a
               # release from https://github.com/brawer/osmdiffs/releases.
-              image = "ghcr.io/brawer/osmdiffs:v0.8.18"
+              image = "ghcr.io/brawer/osmdiffs:v0.9.0"
 
               # The image's ENTRYPOINT is the osmdiffs binary. $(RUN_ID) is
               # Kubernetes' env-var substitution in args (no shell needed).
